@@ -113,7 +113,7 @@ impl ScrollbackBuffer {
             text_lines,
 
             // selection: None,
-            selection: Some(Selection::with_coords(1, 0, 3, 4)), // DEBUG:
+            selection: Some(Selection::with_coords(2, 0, 3, 4)), // DEBUG:
         })
     }
 
@@ -135,11 +135,12 @@ impl ScrollbackBuffer {
             Some(sel) => {
                 if sel.end.y >= self.viewport_start && sel.start.y <= self.viewport_end {
                     let sel_physical_y_start = sel.start.y as isize - self.viewport_start as isize;
-                    let sel_physical_y_end = sel.end.y.saturating_sub(self.viewport_start);
+                    let mut sel_physical_y_end = sel.end.y.saturating_sub(self.viewport_start);
 
                     if sel_physical_y_start < 0 {
                         out.queue(MoveTo(0, 0))?;
                     } else {
+                        debug!("MoveTo({}, {})", sel.start.x, sel_physical_y_start);
                         out.queue(MoveTo(sel.start.x as u16, sel_physical_y_start as u16))?;
                     }
 
@@ -154,22 +155,21 @@ impl ScrollbackBuffer {
                         out.queue(SetForegroundColor(Color::Reset))?;
                         out.queue(SetBackgroundColor(Color::Reset))?;
                     } else {
+                        let mut y_idx = min(sel_physical_y_start, 0) as usize;
                         if sel_physical_y_start >= 0 {
+                            y_idx = sel_physical_y_start.wrapping_abs() as usize + 1;
                             let text_line = &self.text_lines[sel.start.y];
                             let start_idx = get_utf_index(text_line, sel.start.x);
                             out.queue(Print(&text_line[start_idx..]))?;
                         }
 
-                        let loop_start = if sel_physical_y_start >= 0 {
-                            sel.start.y
-                        } else {
-                            sel.start.y + (sel_physical_y_start).wrapping_abs() as usize
-                        };
-                        debug!("loop_start: {} | sel.end.y: {}", loop_start, sel.end.y);
+                        let loop_start = sel.start.y
+                            + ((sel_physical_y_start < 0) as usize
+                                * (sel_physical_y_start).wrapping_abs() as usize)
+                            + ((sel_physical_y_start >= 0) as usize * 1);
 
+                        // This loop covers the full selection without the first and last lines
                         for (i, line) in self.text_lines[loop_start..sel.end.y].iter().enumerate() {
-                            // This loop covers the full selection without the first and last lines
-                            let y_idx = max(sel_physical_y_start, 0) as usize;
                             out.queue(MoveTo(0, (y_idx + i) as u16))?;
                             out.queue(Print(line))?;
                         }
