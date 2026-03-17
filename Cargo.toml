@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 crossterm = "0.29.0"
+log = "0.4.29"
+simplelog = "0.12.2"
+strip-ansi-escapes = "0.2.1"
