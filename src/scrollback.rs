@@ -113,12 +113,10 @@ impl ScrollbackBuffer {
             text_lines,
 
             // selection: None,
-            selection: Some(Selection::with_coords(2, 0, 3, 4)), // DEBUG:
+            selection: Some(Selection::with_coords(4, 72, 3, 100)), // DEBUG:
         })
     }
 
-    // BUG: When selection start is outside of the viewport but the selection is
-    // visible, it renders nonsense
     pub fn draw(&self) -> io::Result<()> {
         let mut out = stdout();
         out.queue(Clear(ClearType::All))?;
@@ -135,12 +133,11 @@ impl ScrollbackBuffer {
             Some(sel) => {
                 if sel.end.y >= self.viewport_start && sel.start.y <= self.viewport_end {
                     let sel_physical_y_start = sel.start.y as isize - self.viewport_start as isize;
-                    let mut sel_physical_y_end = sel.end.y.saturating_sub(self.viewport_start);
+                    let sel_physical_y_end = sel.end.y - self.viewport_start;
 
                     if sel_physical_y_start < 0 {
                         out.queue(MoveTo(0, 0))?;
                     } else {
-                        debug!("MoveTo({}, {})", sel.start.x, sel_physical_y_start);
                         out.queue(MoveTo(sel.start.x as u16, sel_physical_y_start as u16))?;
                     }
 
@@ -163,21 +160,28 @@ impl ScrollbackBuffer {
                             out.queue(Print(&text_line[start_idx..]))?;
                         }
 
-                        let loop_start = sel.start.y
-                            + ((sel_physical_y_start < 0) as usize
-                                * (sel_physical_y_start).wrapping_abs() as usize)
-                            + ((sel_physical_y_start >= 0) as usize * 1);
+                        let loop_start = if sel_physical_y_start < 0 {
+                            sel.start.y + sel_physical_y_start.wrapping_abs() as usize
+                        } else {
+                            sel.start.y + 1
+                        };
 
-                        // This loop covers the full selection without the first and last lines
-                        for (i, line) in self.text_lines[loop_start..sel.end.y].iter().enumerate() {
+                        let loop_end = if sel_physical_y_end < self.term_height {
+                            sel.end.y
+                        } else {
+                            sel.end.y - (sel_physical_y_end - self.term_height)
+                        };
+
+                        for (i, line) in self.text_lines[loop_start..loop_end].iter().enumerate() {
                             out.queue(MoveTo(0, (y_idx + i) as u16))?;
                             out.queue(Print(line))?;
                         }
-                        // TODO: adapt for when this is outside of the viewport
-                        let text_line = &self.text_lines[sel.end.y];
-                        let end_idx = get_utf_index(text_line, sel.end.x + 1);
-                        out.queue(MoveTo(0, (sel_physical_y_end) as u16))?;
-                        out.queue(Print(&text_line[..end_idx]))?;
+                        if sel_physical_y_end < self.term_height {
+                            let text_line = &self.text_lines[sel.end.y];
+                            let end_idx = get_utf_index(text_line, sel.end.x + 1);
+                            out.queue(MoveTo(0, (sel_physical_y_end) as u16))?;
+                            out.queue(Print(&text_line[..end_idx]))?;
+                        }
                         out.queue(SetForegroundColor(Color::Reset))?;
                         out.queue(SetBackgroundColor(Color::Reset))?;
                     }
@@ -293,47 +297,4 @@ fn get_utf_index(line: &str, idx: usize) -> usize {
         .nth(idx)
         .map(|(i, _)| i)
         .unwrap_or(line.len())
-}
-
-fn physical_to_logical_index(line: &str, mut physical: usize) -> (usize, usize) {
-    const ESCAPE_CHAR: char = '\x1b';
-    const RESET_RANGE: (char, char) = (64 as char, 126 as char);
-    let mut escaped = false;
-    let mut utf_offset = 0;
-    for (i, c) in line.chars().enumerate() {
-        if c == ESCAPE_CHAR {
-            escaped = true;
-        }
-        if !escaped {
-            if physical == 0 {
-                return (i + utf_offset, utf_offset);
-            }
-            utf_offset += c.len_utf8() - 1;
-            physical = physical.saturating_sub(1);
-        }
-
-        if c != '[' && c != ']' && c >= RESET_RANGE.0 && c <= RESET_RANGE.1 {
-            escaped = false;
-        }
-    }
-    (line.chars().count(), utf_offset)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_physical_to_logical_index() {
-        let line = "Hello \x1b[31mWorld\x1b[0m!";
-        let text_line = "Hello World!";
-        for i in 0..text_line.chars().count() {
-            assert_eq!(
-                line.chars()
-                    .nth(physical_to_logical_index(line, i).0)
-                    .unwrap(),
-                text_line.chars().nth(i).unwrap()
-            );
-        }
-    }
 }
