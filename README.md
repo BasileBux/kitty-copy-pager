@@ -9,6 +9,10 @@ to move with vim motions and copy text.
 
 ## NOTES:
 
+The clipboard copy uses [crossterm::clipboard](https://docs.rs/crossterm/latest/crossterm/clipboard/struct.CopyToClipboard.html)
+which might not work for 100% of setups but if your terminal doesn't suck it should
+work.
+
 This is a work in progress. It should be working for the most part but still be a
 bit rough in some places. Super basic vim motions are implemented but more  will
 be added in the near future.

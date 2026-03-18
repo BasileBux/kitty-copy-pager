@@ -8,6 +8,7 @@ use crossterm::{
     style::{Color, Print, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType},
 };
+use std::collections::VecDeque;
 use std::io::{self, Write, stdin, stdout};
 use std::{cmp::min, io::Stdout};
 use strip_ansi_escapes::strip;
@@ -15,6 +16,7 @@ use strip_ansi_escapes::strip;
 const PROMPT_CURSOR_OFFSET: usize = 1;
 const SCROLLOFF: usize = 4;
 const SCROLL_JUMP: usize = 10;
+const INPUT_BUFFER_SIZE: usize = 4;
 
 enum VerticalDirection {
     Up,
@@ -36,6 +38,7 @@ pub struct ScrollbackBuffer {
     viewport_start: usize,
     viewport_end: usize,
     selection: Option<Selection>, // We'll assume that start is always before end
+    input_buffer: VecDeque<KeyCode>,
 }
 
 impl ScrollbackBuffer {
@@ -84,6 +87,7 @@ impl ScrollbackBuffer {
             text_lines,
 
             selection: None,
+            input_buffer: VecDeque::with_capacity(INPUT_BUFFER_SIZE),
         })
     }
 
@@ -110,6 +114,19 @@ impl ScrollbackBuffer {
             KeyCode::Char('l') => {
                 self.horizontal_movement(HorizontalDirection::Right, 1)?;
             }
+            KeyCode::Char('0') => {
+                self.horizontal_movement(HorizontalDirection::Left, self.cursor_x)?;
+            }
+            KeyCode::Char('_') => {
+                self.movement_underscore()?;
+            }
+            KeyCode::Char('$') => {
+                let amount = self.text_lines[self.cursor_y]
+                    .chars()
+                    .count()
+                    .saturating_sub(self.cursor_x + 1);
+                self.horizontal_movement(HorizontalDirection::Right, amount)?;
+            }
 
             KeyCode::Char('v') => {
                 self.selection = Some(Selection::with_coords(
@@ -129,14 +146,15 @@ impl ScrollbackBuffer {
             }
 
             // DEBUG: for moving faster, will be implemented with actual vim keys later
-            // TODO: implement correct movement
             crossterm::event::KeyCode::Char('b') => {
                 self.horizontal_movement(HorizontalDirection::Left, SCROLL_JUMP)?;
             }
             crossterm::event::KeyCode::Char('w') => {
                 self.horizontal_movement(HorizontalDirection::Right, SCROLL_JUMP)?;
             }
-            _ => {}
+            _ => {
+                self.input_buffer.push_back(event.code);
+            }
         }
         Ok(false)
     }
@@ -318,6 +336,37 @@ impl ScrollbackBuffer {
             self.draw_cursor()
         }
     }
+
+    // TODO: implement `w` and `W`
+
+    // TODO: implement `e` and `E`
+
+    // TODO: implement `b` and `B`
+
+    fn movement_underscore(&mut self) -> io::Result<()> {
+        let mut amount = self.cursor_x;
+        let mut jmp = 0;
+        for (i, c) in self.text_lines[self.get_cursor_logical_y()]
+            .chars()
+            .enumerate()
+        {
+            if !c.is_whitespace() {
+                jmp = i;
+                break;
+            }
+        }
+        if self.cursor_x > jmp {
+            amount = amount.saturating_sub(jmp);
+            self.horizontal_movement(HorizontalDirection::Left, amount)
+        } else {
+            amount = jmp.saturating_sub(amount);
+            self.horizontal_movement(HorizontalDirection::Right, amount)
+        }
+    }
+    
+    // TODO: implement `gg`
+
+    // TODO: implement `G`
 
     fn get_cursor_logical_y(&self) -> usize {
         self.viewport_start + self.cursor_y

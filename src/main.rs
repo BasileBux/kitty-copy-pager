@@ -14,15 +14,19 @@ use std::time::Duration;
 use log::*;
 use simplelog::*;
 
+const LOGGING_ENABLED: bool = false;
+
 fn main() -> io::Result<()> {
     let mut sb = ScrollbackBuffer::new()?;
 
-    WriteLogger::init(
-        LevelFilter::Debug,
-        Config::default(),
-        std::fs::File::create("debug.log").unwrap(),
-    )
-    .unwrap();
+    if LOGGING_ENABLED {
+        WriteLogger::init(
+            LevelFilter::Debug,
+            Config::default(),
+            std::fs::File::create("debug.log").unwrap(),
+        )
+        .unwrap();
+    }
 
     execute!(stdout(), EnterAlternateScreen, Clear(ClearType::All))?;
     enable_raw_mode()?;
