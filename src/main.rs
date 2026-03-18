@@ -36,10 +36,10 @@ fn main() -> io::Result<()> {
             let event = read()?;
             match event {
                 Event::Key(e) => {
-                    if e.code == crossterm::event::KeyCode::Char('q') {
+                    let quit = sb.handle_key_event(e)?;
+                    if quit {
                         break;
                     }
-                    sb.handle_key_event(e)?;
                 }
                 _ => {}
             }

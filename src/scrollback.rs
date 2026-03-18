@@ -1,13 +1,13 @@
 use crossterm::{
     QueueableCommand,
+    clipboard::CopyToClipboard,
     cursor::MoveTo,
-    event::KeyEvent,
+    event::{KeyCode, KeyEvent},
     execute,
     style::{Color, Print, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType},
 };
-use log::*;
-use std::cmp::{max, min};
+use std::cmp::{PartialEq, min};
 use std::io::{self, Write, stdin, stdout};
 use strip_ansi_escapes::strip;
 
@@ -25,6 +25,7 @@ enum SidewaysDirection {
     Right,
 }
 
+#[derive(Clone)]
 pub struct Vec2<T> {
     x: T,
     y: T,
@@ -35,20 +36,52 @@ impl<T> Vec2<T> {
     }
 }
 
+impl<T: PartialEq> PartialEq for Vec2<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.x == other.x && self.y == other.y
+    }
+}
+
+#[derive(Clone)]
+enum SelectedEnd {
+    Start,
+    End,
+}
+
+#[derive(Clone)]
 pub struct Selection {
     start: Vec2<usize>,
     end: Vec2<usize>,
+    sel_end: SelectedEnd,
 }
 
 impl Selection {
     pub fn new(start: Vec2<usize>, end: Vec2<usize>) -> Self {
-        Selection { start, end }
+        Selection {
+            start,
+            end,
+            sel_end: SelectedEnd::End,
+        }
     }
 
     pub fn with_coords(start_x: usize, start_y: usize, end_x: usize, end_y: usize) -> Self {
         Selection {
             start: Vec2::new(start_x, start_y),
             end: Vec2::new(end_x, end_y),
+            sel_end: SelectedEnd::End,
+        }
+    }
+
+    pub fn swap_ends_to(&mut self, to_x: usize, to_y: usize) {
+        match self.sel_end {
+            SelectedEnd::Start => {
+                self.start = self.end.clone();
+                self.end = Vec2::new(to_x, to_y);
+            }
+            SelectedEnd::End => {
+                self.end = self.start.clone();
+                self.start = Vec2::new(to_x, to_y);
+            }
         }
     }
 }
@@ -201,7 +234,7 @@ impl ScrollbackBuffer {
     }
 
     fn scroll(&mut self, direction: ScrollDirection, mut amount: usize) -> io::Result<()> {
-        let mut rerender = false;
+        let mut rerender = self.selection.is_some();
         match direction {
             ScrollDirection::Up => {
                 if self.cursor_y <= SCROLLOFF && self.viewport_start >= 1 {
@@ -239,18 +272,16 @@ impl ScrollbackBuffer {
             }
         }
 
-        if self.wish_cursor_x
-            > self.text_lines[self.viewport_start + self.cursor_y]
-                .chars()
-                .count()
-        {
-            self.cursor_x = self.text_lines[self.viewport_start + self.cursor_y]
+        if self.wish_cursor_x > self.text_lines[self.get_cursor_logical_y()].chars().count() {
+            self.cursor_x = self.text_lines[self.get_cursor_logical_y()]
                 .chars()
                 .count()
                 .saturating_sub(1);
         } else {
             self.cursor_x = self.wish_cursor_x;
         }
+
+        self.expand_selection();
 
         if rerender {
             self.draw()
@@ -266,9 +297,7 @@ impl ScrollbackBuffer {
                 self.wish_cursor_x = self.cursor_x;
             }
             SidewaysDirection::Right => {
-                let line_length = self.text_lines[self.viewport_start + self.cursor_y]
-                    .chars()
-                    .count();
+                let line_length = self.text_lines[self.get_cursor_logical_y()].chars().count();
                 if self.cursor_x <= line_length.saturating_sub(1) {
                     self.cursor_x = self.cursor_x.saturating_add(amount);
                     self.cursor_x = self.cursor_x.min(line_length);
@@ -276,34 +305,115 @@ impl ScrollbackBuffer {
                 }
             }
         }
-        self.render_cursor()
+        self.expand_selection();
+        if self.selection.is_some() {
+            self.draw()
+        } else {
+            self.render_cursor()
+        }
     }
 
-    pub fn handle_key_event(&mut self, event: KeyEvent) -> io::Result<()> {
+    fn get_cursor_logical_y(&self) -> usize {
+        self.viewport_start + self.cursor_y
+    }
+
+    fn expand_selection(&mut self) {
+        let y = self.get_cursor_logical_y();
+        if let Some(sel) = &mut self.selection {
+            match sel.sel_end {
+                SelectedEnd::Start => {
+                    if y > sel.end.y || (y == sel.end.y && self.cursor_x > sel.end.x) {
+                        sel.swap_ends_to(self.cursor_x, y);
+                        sel.sel_end = SelectedEnd::End;
+                    } else {
+                        sel.start = Vec2::new(self.cursor_x, y);
+                    }
+                }
+                SelectedEnd::End => {
+                    if y < sel.start.y || (y == sel.start.y && self.cursor_x < sel.start.x) {
+                        sel.swap_ends_to(self.cursor_x, y);
+                        sel.sel_end = SelectedEnd::Start;
+                    } else {
+                        sel.end = Vec2::new(self.cursor_x, y);
+                    }
+                }
+            }
+        }
+    }
+
+    fn copy_selection(&self) -> io::Result<()> {
+        if let Some(sel) = &self.selection {
+            let mut copy_string = String::new();
+            let end_y = sel.end.y.min(self.text_lines.len().saturating_sub(1));
+            let last_i = end_y - sel.start.y;
+
+            for (i, line) in self.text_lines[sel.start.y..=end_y].iter().enumerate() {
+                if i == 0 && i == last_i {
+                    let start = get_utf_index(line, sel.start.x);
+                    let end = min(get_utf_index(line, sel.end.x), line.len().saturating_sub(1));
+                    copy_string.push_str(&line[start..end + 1]);
+                } else if i == 0 {
+                    let start = get_utf_index(line, sel.start.x);
+                    copy_string.push_str(&line[start..]);
+                    copy_string.push_str("\n");
+                } else if i == last_i {
+                    let end = min(get_utf_index(line, sel.end.x), line.len().saturating_sub(2));
+                    copy_string.push_str(&line[..end + 1]);
+                    copy_string.push_str("\n");
+                } else {
+                    copy_string.push_str(line);
+                    copy_string.push_str("\n");
+                }
+            }
+            execute!(stdout(), CopyToClipboard::to_clipboard_from(&copy_string))?;
+            stdout().flush()?;
+        }
+        Ok(())
+    }
+
+    pub fn handle_key_event(&mut self, event: KeyEvent) -> io::Result<bool> {
         match event.code {
-            crossterm::event::KeyCode::Char('j') => {
+            KeyCode::Char('q') => {
+                return Ok(true);
+            }
+            KeyCode::Char('j') => {
                 self.scroll(ScrollDirection::Down, 1)?;
             }
-            crossterm::event::KeyCode::Char('k') => {
+            KeyCode::Char('k') => {
                 self.scroll(ScrollDirection::Up, 1)?;
             }
-            crossterm::event::KeyCode::Char('d') => {
+            KeyCode::Char('d') => {
                 self.scroll(ScrollDirection::Down, SCROLL_JUMP)?;
             }
-            crossterm::event::KeyCode::Char('u') => {
+            KeyCode::Char('u') => {
                 self.scroll(ScrollDirection::Up, SCROLL_JUMP)?;
             }
-            crossterm::event::KeyCode::Char('h') => {
+            KeyCode::Char('h') => {
                 self.move_sideways(SidewaysDirection::Left, 1)?;
             }
-            crossterm::event::KeyCode::Char('l') => {
+            KeyCode::Char('l') => {
                 self.move_sideways(SidewaysDirection::Right, 1)?;
             }
 
-            // TODO: Implement selection start, expansion and validation. Maybe also
-            // changing the direction the selection expands
+            KeyCode::Char('v') => {
+                self.selection = Some(Selection::with_coords(
+                    self.cursor_x,
+                    self.get_cursor_logical_y(),
+                    self.cursor_x,
+                    self.get_cursor_logical_y(),
+                ));
+            }
+            KeyCode::Char('y') | KeyCode::Enter => {
+                self.copy_selection()?;
+                return Ok(true);
+            }
+            KeyCode::Esc => {
+                self.selection = None;
+                self.draw()?;
+            }
 
             // DEBUG: for moving faster, will be implemented with actual vim keys later
+            // TODO: implement correct movement
             crossterm::event::KeyCode::Char('b') => {
                 self.move_sideways(SidewaysDirection::Left, SCROLL_JUMP)?;
             }
@@ -312,7 +422,7 @@ impl ScrollbackBuffer {
             }
             _ => {}
         }
-        Ok(())
+        Ok(false)
     }
 }
 
