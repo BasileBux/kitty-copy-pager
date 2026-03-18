@@ -112,8 +112,7 @@ impl ScrollbackBuffer {
             lines: raw_lines,
             text_lines,
 
-            // selection: None,
-            selection: Some(Selection::with_coords(4, 72, 3, 100)), // DEBUG:
+            selection: None,
         })
     }
 
@@ -231,7 +230,7 @@ impl ScrollbackBuffer {
                     self.viewport_start = self.viewport_start.saturating_add(amount);
                     self.viewport_end = self.viewport_end.saturating_add(amount);
                     rerender = true;
-                } else if self.cursor_y < self.term_height {
+                } else if self.cursor_y < self.viewport_end {
                     self.cursor_y = self
                         .cursor_y
                         .saturating_add(amount)
