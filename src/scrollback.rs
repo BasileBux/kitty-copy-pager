@@ -195,25 +195,43 @@ impl ScrollbackBuffer {
         Ok(())
     }
 
-    // TODO: Optimize to only redraw if there is scrolling. Else, just move the cursor
-    fn scroll(&mut self, direction: ScrollDirection, amount: usize) -> io::Result<()> {
+    fn render_cursor(&self) -> io::Result<()> {
+        stdout().queue(MoveTo(self.cursor_x as u16, self.cursor_y as u16))?;
+        stdout().flush()?;
+        Ok(())
+    }
+
+    fn scroll(&mut self, direction: ScrollDirection, mut amount: usize) -> io::Result<()> {
+        let mut rerender = false;
         match direction {
             ScrollDirection::Up => {
-                if self.cursor_y <= SCROLLOFF && self.viewport_start >= amount {
+                if self.cursor_y <= SCROLLOFF && self.viewport_start >= 1 {
+                    amount = if self.viewport_start >= amount {
+                        amount
+                    } else {
+                        self.viewport_start
+                    };
+
                     self.viewport_start = self.viewport_start.saturating_sub(amount);
                     self.viewport_end = self.viewport_end.saturating_sub(amount);
+                    rerender = true;
                 } else {
                     self.cursor_y = self.cursor_y.saturating_sub(amount);
                 }
             }
             ScrollDirection::Down => {
-                // BUG: sometimes it OOBs and crashes
-                if self.cursor_y >= self.term_height - 1 - SCROLLOFF
-                    && self.viewport_end < self.lines.len().saturating_sub(1)
+                let max_len = self.lines.len().saturating_sub(1);
+                if self.cursor_y >= self.term_height - 1 - SCROLLOFF && self.viewport_end < max_len
                 {
+                    amount = if self.viewport_end < self.lines.len().saturating_sub(amount) {
+                        amount
+                    } else {
+                        max_len.saturating_sub(self.viewport_end)
+                    };
                     self.viewport_start = self.viewport_start.saturating_add(amount);
                     self.viewport_end = self.viewport_end.saturating_add(amount);
-                } else if self.cursor_y < self.viewport_end.saturating_sub(1) {
+                    rerender = true;
+                } else if self.cursor_y < self.term_height {
                     self.cursor_y = self
                         .cursor_y
                         .saturating_add(amount)
@@ -221,6 +239,7 @@ impl ScrollbackBuffer {
                 }
             }
         }
+
         if self.wish_cursor_x
             > self.text_lines[self.viewport_start + self.cursor_y]
                 .chars()
@@ -233,7 +252,12 @@ impl ScrollbackBuffer {
         } else {
             self.cursor_x = self.wish_cursor_x;
         }
-        self.draw()
+
+        if rerender {
+            self.draw()
+        } else {
+            self.render_cursor()
+        }
     }
 
     fn move_sideways(&mut self, direction: SidewaysDirection, amount: usize) -> io::Result<()> {
@@ -253,9 +277,7 @@ impl ScrollbackBuffer {
                 }
             }
         }
-        execute!(stdout(), MoveTo(self.cursor_x as u16, self.cursor_y as u16))?;
-        stdout().flush()?;
-        Ok(())
+        self.render_cursor()
     }
 
     pub fn handle_key_event(&mut self, event: KeyEvent) -> io::Result<()> {
@@ -278,6 +300,9 @@ impl ScrollbackBuffer {
             crossterm::event::KeyCode::Char('l') => {
                 self.move_sideways(SidewaysDirection::Right, 1)?;
             }
+
+            // TODO: Implement selection start, expansion and validation. Maybe also
+            // changing the direction the selection expands
 
             // DEBUG: for moving faster, will be implemented with actual vim keys later
             crossterm::event::KeyCode::Char('b') => {
