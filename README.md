@@ -1,6 +1,17 @@
 # Kitty scrollback copy mode
 
+I love [tmux](https://github.com/tmux/tmux)'s copy mode but I don't want to use it
+as it is way too overkill for what I do so I rewrote something similar.
+
+This was made as a scollback pager for the [kitty](https://sw.kovidgoyal.net/kitty/)
+terminal. It receives the full scrollback in `stdin` and then renders it and allows
+to move with vim motions and copy text.
+
 ## NOTES:
+
+This is a work in progress. It should be working for the most part but still be a
+bit rough in some places. Super basic vim motions are implemented but more  will
+be added in the near future.
 
 ```conf
 scrollback_pager kitty-copy-mode --flags
@@ -19,4 +30,3 @@ the terminal. It will remain functional but might not be the best experience.
 - [ ] More advanced movement keys (b, w, W, e, 0, $, gg, G, etc...)
 - [ ] More advanced selection motions (`vi"`, `va(`, etc...)
 - [ ] Nice UI to indicate copy mode is active
-- [ ] Window resizing

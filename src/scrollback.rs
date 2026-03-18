@@ -1,3 +1,4 @@
+use crate::selection::*;
 use crossterm::{
     QueueableCommand,
     clipboard::CopyToClipboard,
@@ -7,83 +8,22 @@ use crossterm::{
     style::{Color, Print, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType},
 };
-use std::cmp::{PartialEq, min};
 use std::io::{self, Write, stdin, stdout};
+use std::{cmp::min, io::Stdout};
 use strip_ansi_escapes::strip;
 
 const PROMPT_CURSOR_OFFSET: usize = 1;
 const SCROLLOFF: usize = 4;
 const SCROLL_JUMP: usize = 10;
 
-enum ScrollDirection {
+enum VerticalDirection {
     Up,
     Down,
 }
 
-enum SidewaysDirection {
+enum HorizontalDirection {
     Left,
     Right,
-}
-
-#[derive(Clone)]
-pub struct Vec2<T> {
-    x: T,
-    y: T,
-}
-impl<T> Vec2<T> {
-    pub fn new(x: T, y: T) -> Self {
-        Vec2 { x, y }
-    }
-}
-
-impl<T: PartialEq> PartialEq for Vec2<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.x == other.x && self.y == other.y
-    }
-}
-
-#[derive(Clone)]
-enum SelectedEnd {
-    Start,
-    End,
-}
-
-#[derive(Clone)]
-pub struct Selection {
-    start: Vec2<usize>,
-    end: Vec2<usize>,
-    sel_end: SelectedEnd,
-}
-
-impl Selection {
-    pub fn new(start: Vec2<usize>, end: Vec2<usize>) -> Self {
-        Selection {
-            start,
-            end,
-            sel_end: SelectedEnd::End,
-        }
-    }
-
-    pub fn with_coords(start_x: usize, start_y: usize, end_x: usize, end_y: usize) -> Self {
-        Selection {
-            start: Vec2::new(start_x, start_y),
-            end: Vec2::new(end_x, end_y),
-            sel_end: SelectedEnd::End,
-        }
-    }
-
-    pub fn swap_ends_to(&mut self, to_x: usize, to_y: usize) {
-        match self.sel_end {
-            SelectedEnd::Start => {
-                self.start = self.end.clone();
-                self.end = Vec2::new(to_x, to_y);
-            }
-            SelectedEnd::End => {
-                self.end = self.start.clone();
-                self.start = Vec2::new(to_x, to_y);
-            }
-        }
-    }
 }
 
 pub struct ScrollbackBuffer {
@@ -92,11 +32,10 @@ pub struct ScrollbackBuffer {
     cursor_x: usize,
     cursor_y: usize,
     wish_cursor_x: usize,
-    term_width: usize,
     term_height: usize,
     viewport_start: usize,
     viewport_end: usize,
-    selection: Option<Selection>, // We assume that start is always before end
+    selection: Option<Selection>, // We'll assume that start is always before end
 }
 
 impl ScrollbackBuffer {
@@ -109,7 +48,7 @@ impl ScrollbackBuffer {
             text_lines.push(stripped);
             raw_lines.push(line);
         }
-        let (term_width, term_height) = crossterm::terminal::size()?;
+        let (_, term_height) = crossterm::terminal::size()?;
 
         // The scrollback may contain empty lines at the end
         let mut last_non_empty_line_idx = raw_lines.len().saturating_sub(1);
@@ -136,7 +75,6 @@ impl ScrollbackBuffer {
 
             wish_cursor_x: cursor_x,
 
-            term_width: term_width as usize,
             term_height: term_height as usize,
 
             viewport_start: raw_lines.len().saturating_sub(term_height as usize),
@@ -147,6 +85,60 @@ impl ScrollbackBuffer {
 
             selection: None,
         })
+    }
+
+    pub fn handle_key_event(&mut self, event: KeyEvent) -> io::Result<bool> {
+        match event.code {
+            KeyCode::Char('q') => {
+                return Ok(true);
+            }
+            KeyCode::Char('j') => {
+                self.vertical_movement(VerticalDirection::Down, 1)?;
+            }
+            KeyCode::Char('k') => {
+                self.vertical_movement(VerticalDirection::Up, 1)?;
+            }
+            KeyCode::Char('d') => {
+                self.vertical_movement(VerticalDirection::Down, SCROLL_JUMP)?;
+            }
+            KeyCode::Char('u') => {
+                self.vertical_movement(VerticalDirection::Up, SCROLL_JUMP)?;
+            }
+            KeyCode::Char('h') => {
+                self.horizontal_movement(HorizontalDirection::Left, 1)?;
+            }
+            KeyCode::Char('l') => {
+                self.horizontal_movement(HorizontalDirection::Right, 1)?;
+            }
+
+            KeyCode::Char('v') => {
+                self.selection = Some(Selection::with_coords(
+                    self.cursor_x,
+                    self.get_cursor_logical_y(),
+                    self.cursor_x,
+                    self.get_cursor_logical_y(),
+                ));
+            }
+            KeyCode::Char('y') | KeyCode::Enter => {
+                self.copy_selection()?;
+                return Ok(true);
+            }
+            KeyCode::Esc => {
+                self.selection = None;
+                self.draw()?;
+            }
+
+            // DEBUG: for moving faster, will be implemented with actual vim keys later
+            // TODO: implement correct movement
+            crossterm::event::KeyCode::Char('b') => {
+                self.horizontal_movement(HorizontalDirection::Left, SCROLL_JUMP)?;
+            }
+            crossterm::event::KeyCode::Char('w') => {
+                self.horizontal_movement(HorizontalDirection::Right, SCROLL_JUMP)?;
+            }
+            _ => {}
+        }
+        Ok(false)
     }
 
     pub fn draw(&self) -> io::Result<()> {
@@ -163,61 +155,7 @@ impl ScrollbackBuffer {
 
         match &self.selection {
             Some(sel) => {
-                if sel.end.y >= self.viewport_start && sel.start.y <= self.viewport_end {
-                    let sel_physical_y_start = sel.start.y as isize - self.viewport_start as isize;
-                    let sel_physical_y_end = sel.end.y - self.viewport_start;
-
-                    if sel_physical_y_start < 0 {
-                        out.queue(MoveTo(0, 0))?;
-                    } else {
-                        out.queue(MoveTo(sel.start.x as u16, sel_physical_y_start as u16))?;
-                    }
-
-                    out.queue(SetForegroundColor(Color::Black))?;
-                    out.queue(SetBackgroundColor(Color::Yellow))?;
-
-                    if sel.start.y == sel.end.y {
-                        let text_line = &self.text_lines[sel.start.y];
-                        let start_idx = get_utf_index(text_line, sel.start.x);
-                        let end_idx = get_utf_index(text_line, sel.end.x + 1);
-                        out.queue(Print(&text_line[start_idx..end_idx]))?;
-                        out.queue(SetForegroundColor(Color::Reset))?;
-                        out.queue(SetBackgroundColor(Color::Reset))?;
-                    } else {
-                        let mut y_idx = min(sel_physical_y_start, 0) as usize;
-                        if sel_physical_y_start >= 0 {
-                            y_idx = sel_physical_y_start.wrapping_abs() as usize + 1;
-                            let text_line = &self.text_lines[sel.start.y];
-                            let start_idx = get_utf_index(text_line, sel.start.x);
-                            out.queue(Print(&text_line[start_idx..]))?;
-                        }
-
-                        let loop_start = if sel_physical_y_start < 0 {
-                            sel.start.y + sel_physical_y_start.wrapping_abs() as usize
-                        } else {
-                            sel.start.y + 1
-                        };
-
-                        let loop_end = if sel_physical_y_end < self.term_height {
-                            sel.end.y
-                        } else {
-                            sel.end.y - (sel_physical_y_end - self.term_height)
-                        };
-
-                        for (i, line) in self.text_lines[loop_start..loop_end].iter().enumerate() {
-                            out.queue(MoveTo(0, (y_idx + i) as u16))?;
-                            out.queue(Print(line))?;
-                        }
-                        if sel_physical_y_end < self.term_height {
-                            let text_line = &self.text_lines[sel.end.y];
-                            let end_idx = get_utf_index(text_line, sel.end.x + 1);
-                            out.queue(MoveTo(0, (sel_physical_y_end) as u16))?;
-                            out.queue(Print(&text_line[..end_idx]))?;
-                        }
-                        out.queue(SetForegroundColor(Color::Reset))?;
-                        out.queue(SetBackgroundColor(Color::Reset))?;
-                    }
-                }
+                self.draw_selection(&sel, &mut out)?;
             }
             None => {}
         }
@@ -227,16 +165,80 @@ impl ScrollbackBuffer {
         Ok(())
     }
 
-    fn render_cursor(&self) -> io::Result<()> {
-        stdout().queue(MoveTo(self.cursor_x as u16, self.cursor_y as u16))?;
-        stdout().flush()?;
+    fn draw_selection(&self, sel: &Selection, out: &mut Stdout) -> io::Result<()> {
+        if sel.end.y >= self.viewport_start && sel.start.y <= self.viewport_end {
+            let sel_physical_y_start = sel.start.y as isize - self.viewport_start as isize;
+            let sel_physical_y_end = sel.end.y - self.viewport_start;
+
+            if sel_physical_y_start < 0 {
+                out.queue(MoveTo(0, 0))?;
+            } else {
+                out.queue(MoveTo(sel.start.x as u16, sel_physical_y_start as u16))?;
+            }
+
+            out.queue(SetForegroundColor(Color::Black))?;
+            out.queue(SetBackgroundColor(Color::Yellow))?;
+
+            if sel.start.y == sel.end.y {
+                let text_line = &self.text_lines[sel.start.y];
+                let start_idx = get_utf_index(text_line, sel.start.x);
+                let end_idx = get_utf_index(text_line, sel.end.x + 1);
+                out.queue(Print(&text_line[start_idx..end_idx]))?;
+                out.queue(SetForegroundColor(Color::Reset))?;
+                out.queue(SetBackgroundColor(Color::Reset))?;
+            } else {
+                let mut y_idx = min(sel_physical_y_start, 0) as usize;
+                if sel_physical_y_start >= 0 {
+                    y_idx = sel_physical_y_start.wrapping_abs() as usize + 1;
+                    let text_line = &self.text_lines[sel.start.y];
+                    let start_idx = get_utf_index(text_line, sel.start.x);
+                    out.queue(Print(&text_line[start_idx..]))?;
+                }
+
+                let loop_start = if sel_physical_y_start < 0 {
+                    sel.start.y + sel_physical_y_start.wrapping_abs() as usize
+                } else {
+                    sel.start.y + 1
+                };
+
+                let loop_end = if sel_physical_y_end < self.term_height {
+                    sel.end.y
+                } else {
+                    sel.end.y - (sel_physical_y_end - self.term_height)
+                };
+
+                for (i, line) in self.text_lines[loop_start..loop_end].iter().enumerate() {
+                    out.queue(MoveTo(0, (y_idx + i) as u16))?;
+                    out.queue(Print(line))?;
+                }
+                if sel_physical_y_end < self.term_height {
+                    let text_line = &self.text_lines[sel.end.y];
+                    let end_idx = get_utf_index(text_line, sel.end.x + 1);
+                    out.queue(MoveTo(0, (sel_physical_y_end) as u16))?;
+                    out.queue(Print(&text_line[..end_idx]))?;
+                }
+                out.queue(SetForegroundColor(Color::Reset))?;
+                out.queue(SetBackgroundColor(Color::Reset))?;
+            }
+        }
         Ok(())
     }
 
-    fn scroll(&mut self, direction: ScrollDirection, mut amount: usize) -> io::Result<()> {
+    fn draw_cursor(&self) -> io::Result<()> {
+        let mut out = stdout();
+        out.queue(MoveTo(self.cursor_x as u16, self.cursor_y as u16))?;
+        out.flush()?;
+        Ok(())
+    }
+
+    fn vertical_movement(
+        &mut self,
+        direction: VerticalDirection,
+        mut amount: usize,
+    ) -> io::Result<()> {
         let mut rerender = self.selection.is_some();
         match direction {
-            ScrollDirection::Up => {
+            VerticalDirection::Up => {
                 if self.cursor_y <= SCROLLOFF && self.viewport_start >= 1 {
                     amount = if self.viewport_start >= amount {
                         amount
@@ -251,7 +253,7 @@ impl ScrollbackBuffer {
                     self.cursor_y = self.cursor_y.saturating_sub(amount);
                 }
             }
-            ScrollDirection::Down => {
+            VerticalDirection::Down => {
                 let max_len = self.lines.len().saturating_sub(1);
                 if self.cursor_y >= self.term_height - 1 - SCROLLOFF && self.viewport_end < max_len
                 {
@@ -286,17 +288,21 @@ impl ScrollbackBuffer {
         if rerender {
             self.draw()
         } else {
-            self.render_cursor()
+            self.draw_cursor()
         }
     }
 
-    fn move_sideways(&mut self, direction: SidewaysDirection, amount: usize) -> io::Result<()> {
+    fn horizontal_movement(
+        &mut self,
+        direction: HorizontalDirection,
+        amount: usize,
+    ) -> io::Result<()> {
         match direction {
-            SidewaysDirection::Left => {
+            HorizontalDirection::Left => {
                 self.cursor_x = self.cursor_x.saturating_sub(amount);
                 self.wish_cursor_x = self.cursor_x;
             }
-            SidewaysDirection::Right => {
+            HorizontalDirection::Right => {
                 let line_length = self.text_lines[self.get_cursor_logical_y()].chars().count();
                 if self.cursor_x <= line_length.saturating_sub(1) {
                     self.cursor_x = self.cursor_x.saturating_add(amount);
@@ -309,7 +315,7 @@ impl ScrollbackBuffer {
         if self.selection.is_some() {
             self.draw()
         } else {
-            self.render_cursor()
+            self.draw_cursor()
         }
     }
 
@@ -365,64 +371,11 @@ impl ScrollbackBuffer {
                     copy_string.push_str("\n");
                 }
             }
-            execute!(stdout(), CopyToClipboard::to_clipboard_from(&copy_string))?;
-            stdout().flush()?;
+            let mut out = stdout();
+            execute!(out, CopyToClipboard::to_clipboard_from(&copy_string))?;
+            out.flush()?;
         }
         Ok(())
-    }
-
-    pub fn handle_key_event(&mut self, event: KeyEvent) -> io::Result<bool> {
-        match event.code {
-            KeyCode::Char('q') => {
-                return Ok(true);
-            }
-            KeyCode::Char('j') => {
-                self.scroll(ScrollDirection::Down, 1)?;
-            }
-            KeyCode::Char('k') => {
-                self.scroll(ScrollDirection::Up, 1)?;
-            }
-            KeyCode::Char('d') => {
-                self.scroll(ScrollDirection::Down, SCROLL_JUMP)?;
-            }
-            KeyCode::Char('u') => {
-                self.scroll(ScrollDirection::Up, SCROLL_JUMP)?;
-            }
-            KeyCode::Char('h') => {
-                self.move_sideways(SidewaysDirection::Left, 1)?;
-            }
-            KeyCode::Char('l') => {
-                self.move_sideways(SidewaysDirection::Right, 1)?;
-            }
-
-            KeyCode::Char('v') => {
-                self.selection = Some(Selection::with_coords(
-                    self.cursor_x,
-                    self.get_cursor_logical_y(),
-                    self.cursor_x,
-                    self.get_cursor_logical_y(),
-                ));
-            }
-            KeyCode::Char('y') | KeyCode::Enter => {
-                self.copy_selection()?;
-                return Ok(true);
-            }
-            KeyCode::Esc => {
-                self.selection = None;
-                self.draw()?;
-            }
-
-            // DEBUG: for moving faster, will be implemented with actual vim keys later
-            // TODO: implement correct movement
-            crossterm::event::KeyCode::Char('b') => {
-                self.move_sideways(SidewaysDirection::Left, SCROLL_JUMP)?;
-            }
-            crossterm::event::KeyCode::Char('w') => {
-                self.move_sideways(SidewaysDirection::Right, SCROLL_JUMP)?;
-            }
-            _ => {}
-        }
-        Ok(false)
     }
 }
 
