@@ -32,5 +32,7 @@ the terminal. It will remain functional but might not be the best experience.
 - [x] Initiate selection with `v` and copy with `y` or `enter`, switch end with `o`
 - [x] Copying to clipboard
 - [ ] More advanced movement keys (b, w, W, e, 0, $, gg, G, etc...)
+- [ ] Rework the movement system
+- [ ] Even more advanced movement keys
 - [ ] More advanced selection motions (`vi"`, `va(`, etc...)
 - [ ] Nice UI to indicate copy mode is active

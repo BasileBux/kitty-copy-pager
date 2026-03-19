@@ -16,6 +16,8 @@ use simplelog::*;
 
 const LOGGING_ENABLED: bool = false;
 
+const INPUT_POLLING_RATE: u64 = 100;
+
 fn main() -> io::Result<()> {
     let mut sb = ScrollbackBuffer::new()?;
 
@@ -36,7 +38,7 @@ fn main() -> io::Result<()> {
     sb.draw()?;
 
     loop {
-        if poll(Duration::from_millis(100))? {
+        if poll(Duration::from_millis(INPUT_POLLING_RATE))? {
             let event = read()?;
             match event {
                 Event::Key(e) => {
