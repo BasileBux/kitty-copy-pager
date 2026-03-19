@@ -19,21 +19,11 @@ const SCROLLOFF: usize = 4;
 const SCROLL_JUMP: usize = 10;
 const INPUT_BUFFER_SIZE: usize = 4;
 
-enum VerticalDirection {
-    Up,
-    Down,
-}
-
-enum HorizontalDirection {
-    Left,
-    Right,
-}
-
 pub struct ScrollbackBuffer {
     lines: Vec<String>,
     text_lines: Vec<String>, // Lines without escape sequences
     cursor_x: usize,
-    cursor_y: usize,
+    logical_y: usize,
     wish_cursor_x: usize,
     term_height: usize,
     viewport_start: usize,
@@ -68,14 +58,9 @@ impl ScrollbackBuffer {
             .unwrap_or(0)
             + PROMPT_CURSOR_OFFSET;
 
-        let cursor_y = min(
-            term_height.saturating_sub(1) as usize,
-            raw_lines.len().saturating_sub(1),
-        );
-
         Ok(Self {
             cursor_x,
-            cursor_y,
+            logical_y: raw_lines.len().saturating_sub(1),
 
             wish_cursor_x: cursor_x,
 
@@ -98,71 +83,85 @@ impl ScrollbackBuffer {
                 return Ok(true);
             }
             KeyCode::Char('j') => {
-                self.vertical_movement(VerticalDirection::Down, 1)?;
+                self.move_vertically_by(1);
+                self.movement_suffix(true)?;
             }
             KeyCode::Char('k') => {
-                self.vertical_movement(VerticalDirection::Up, 1)?;
+                self.move_vertically_by(-1);
+                self.movement_suffix(true)?;
             }
             KeyCode::Char('d') => {
                 // Replaces ctrl+d
-                self.vertical_movement(VerticalDirection::Down, SCROLL_JUMP)?;
+                self.move_vertically_by(SCROLL_JUMP as isize);
+                self.movement_suffix(true)?;
             }
             KeyCode::Char('u') => {
                 // Replaces ctrl+u
-                self.vertical_movement(VerticalDirection::Up, SCROLL_JUMP)?;
+                self.move_vertically_by(-(SCROLL_JUMP as isize));
+                self.movement_suffix(true)?;
             }
             KeyCode::Char('h') => {
-                self.horizontal_movement(HorizontalDirection::Left, 1)?;
+                self.move_horizontally_by(-1);
+                self.movement_suffix(false)?;
             }
             KeyCode::Char('l') => {
-                self.horizontal_movement(HorizontalDirection::Right, 1)?;
+                self.move_horizontally_by(1);
+                self.movement_suffix(false)?;
             }
 
             KeyCode::Char('0') => {
-                self.horizontal_movement(HorizontalDirection::Left, self.cursor_x)?;
+                self.move_horizontally_to(0);
+                self.movement_suffix(false)?;
             }
             KeyCode::Char('_') => {
-                self.movement_underscore()?;
+                self.movement_underscore();
+                self.movement_suffix(false)?;
             }
             KeyCode::Char('$') => {
-                let amount = self
-                    .get_current_text_line_len()
-                    .saturating_sub(self.cursor_x + 1);
-                self.horizontal_movement(HorizontalDirection::Right, amount)?;
+                self.move_horizontally_to(self.get_current_text_line_len().saturating_sub(1));
+                self.movement_suffix(false)?;
             }
-
             KeyCode::Char('w') => {
-                self.movement_w(false)?;
+                self.movement_w(false);
+                self.movement_suffix(false)?;
             }
             KeyCode::Char('W') => {
-                self.movement_w(true)?;
+                self.movement_w(true);
+                self.movement_suffix(false)?;
             }
             KeyCode::Char('b') => {
-                self.movement_b(false)?;
+                self.movement_b(false);
+                self.movement_suffix(false)?;
             }
             KeyCode::Char('B') => {
-                self.movement_b(true)?;
+                self.movement_b(true);
+                self.movement_suffix(false)?;
             }
             KeyCode::Char('e') => {
-                self.movement_e(false)?;
+                self.movement_e(false);
+                self.movement_suffix(false)?;
             }
             KeyCode::Char('E') => {
-                self.movement_e(true)?;
+                self.movement_e(true);
+                self.movement_suffix(false)?;
             }
             KeyCode::Char('G') => {
-                self.movement_G()?;
+                self.movement_G();
+                self.movement_suffix(true)?;
             }
             KeyCode::Char('g') => {
-                self.movement_gg()?;
+                if self.movement_gg() {
+                    self.movement_suffix(true)?;
+                }
                 self.input_buffer.push_back(event.code);
             }
 
             KeyCode::Char('v') => {
                 self.selection = Some(Selection::with_coords(
                     self.cursor_x,
-                    self.get_cursor_logical_y(),
+                    self.logical_y,
                     self.cursor_x,
-                    self.get_cursor_logical_y(),
+                    self.logical_y,
                 ));
             }
             KeyCode::Char('y') | KeyCode::Enter => {
@@ -173,7 +172,6 @@ impl ScrollbackBuffer {
                 self.selection = None;
                 self.draw()?;
             }
-
             _ => {
                 self.input_buffer.push_back(event.code);
             }
@@ -200,7 +198,10 @@ impl ScrollbackBuffer {
             None => {}
         }
 
-        out.queue(MoveTo(self.cursor_x as u16, self.cursor_y as u16))?;
+        out.queue(MoveTo(
+            self.cursor_x as u16,
+            self.get_physical_cursor_y() as u16,
+        ))?;
         out.flush()?;
         Ok(())
     }
@@ -266,109 +267,92 @@ impl ScrollbackBuffer {
 
     fn draw_cursor(&self) -> io::Result<()> {
         let mut out = stdout();
-        out.queue(MoveTo(self.cursor_x as u16, self.cursor_y as u16))?;
+        out.queue(MoveTo(
+            self.cursor_x as u16,
+            self.get_physical_cursor_y() as u16,
+        ))?;
+        match &self.selection {
+            Some(sel) => {
+                self.draw_selection(&sel, &mut out)?;
+            }
+            None => {}
+        }
         out.flush()?;
         Ok(())
     }
 
-    // fn move_to(&mut self, x: usize, y: usize) {}
-    // fn move_vertically_by(&mut self, dir: VerticalDirection, amount: usize) {}
-    // fn move_horizontally_by(&mut self, dir: HorizontalDirection, amount: usize) {}
+    fn get_physical_cursor_y(&self) -> usize {
+        self.logical_y.saturating_sub(self.viewport_start)
+    }
 
-    fn vertical_movement(
-        &mut self,
-        direction: VerticalDirection,
-        mut amount: usize,
-    ) -> io::Result<()> {
-        if amount == 0 {
-            return Ok(());
+    fn move_to(&mut self, x: usize, y: usize) {
+        self.logical_y = min(y, self.lines.len().saturating_sub(1));
+        let line_len = self.get_current_text_line_len();
+        self.cursor_x = min(x, line_len.saturating_sub(1));
+    }
+
+    fn move_vertically_by(&mut self, amount: isize) {
+        self.logical_y = min(
+            self.logical_y.saturating_add_signed(amount),
+            self.lines.len().saturating_sub(1),
+        );
+        let line_len = self.get_current_text_line_len();
+        self.cursor_x = min(self.wish_cursor_x, line_len.saturating_sub(1));
+    }
+
+    fn move_vertically_to(&mut self, y: usize) {
+        self.move_to(self.cursor_x, y);
+        let line_len = self.get_current_text_line_len();
+        self.cursor_x = min(self.wish_cursor_x, line_len.saturating_sub(1));
+    }
+
+    fn move_horizontally_by(&mut self, amount: isize) {
+        let line_len = self.get_current_text_line_len();
+        self.cursor_x = min(
+            self.cursor_x.saturating_add_signed(amount),
+            line_len.saturating_sub(1),
+        );
+        self.wish_cursor_x = self.cursor_x;
+    }
+
+    fn move_horizontally_to(&mut self, x: usize) {
+        self.move_to(x, self.logical_y);
+        self.wish_cursor_x = self.cursor_x;
+    }
+
+    fn move_viewport(&mut self) -> bool {
+        let upper_bound = self.logical_y.saturating_add(SCROLLOFF);
+        if upper_bound > self.viewport_end {
+            let mut movement = self.viewport_end;
+            self.viewport_end = min(
+                self.logical_y.saturating_add(SCROLLOFF),
+                self.lines.len().saturating_sub(1),
+            );
+            movement = self.viewport_end - movement;
+            self.viewport_start = self.viewport_start.saturating_add(movement);
+            return true;
         }
-        let mut rerender = self.selection.is_some();
-        match direction {
-            VerticalDirection::Up => {
-                if self.cursor_y <= SCROLLOFF && self.viewport_start >= 1 {
-                    amount = if self.viewport_start >= amount {
-                        amount
-                    } else {
-                        self.viewport_start
-                    };
-
-                    self.viewport_start = self.viewport_start.saturating_sub(amount);
-                    self.viewport_end = self.viewport_end.saturating_sub(amount);
-                    rerender = true;
-                } else {
-                    self.cursor_y = self.cursor_y.saturating_sub(amount);
-                }
-            }
-            VerticalDirection::Down => {
-                let max_len = self.lines.len().saturating_sub(1);
-                if self.cursor_y >= self.term_height - 1 - SCROLLOFF && self.viewport_end < max_len
-                {
-                    amount = if self.viewport_end < self.lines.len().saturating_sub(amount) {
-                        amount
-                    } else {
-                        max_len.saturating_sub(self.viewport_end)
-                    };
-                    self.viewport_start = self.viewport_start.saturating_add(amount);
-                    self.viewport_end = self.viewport_end.saturating_add(amount);
-                    rerender = true;
-                } else if self.cursor_y < self.viewport_end {
-                    self.cursor_y = self
-                        .cursor_y
-                        .saturating_add(amount)
-                        .min(self.viewport_end - self.viewport_start);
-                }
-            }
+        if self.logical_y.saturating_sub(SCROLLOFF) < self.viewport_start {
+            let mut movement = self.viewport_start;
+            self.viewport_start = self.logical_y.saturating_sub(SCROLLOFF);
+            movement = movement - self.viewport_start;
+            self.viewport_end = self.viewport_end.saturating_sub(movement);
+            return true;
         }
+        false
+    }
 
-        let current_line_len = self.get_current_text_line_len();
-        if self.wish_cursor_x > current_line_len {
-            self.cursor_x = current_line_len.saturating_sub(1);
-        } else {
-            self.cursor_x = self.wish_cursor_x;
-        }
-
-        self.expand_selection();
-
-        if rerender {
+    fn movement_suffix(&mut self, rerender: bool) -> io::Result<()> {
+        if (rerender && self.move_viewport()) || self.selection.is_some() {
+            self.expand_selection();
             self.draw()
         } else {
+            self.expand_selection();
             self.draw_cursor()
         }
     }
 
-    fn horizontal_movement(
-        &mut self,
-        direction: HorizontalDirection,
-        amount: usize,
-    ) -> io::Result<()> {
-        if amount == 0 {
-            return Ok(());
-        }
-        match direction {
-            HorizontalDirection::Left => {
-                self.cursor_x = self.cursor_x.saturating_sub(amount);
-                self.wish_cursor_x = self.cursor_x;
-            }
-            HorizontalDirection::Right => {
-                let line_length = self.get_current_text_line_len();
-                if self.cursor_x <= line_length.saturating_sub(1) {
-                    self.cursor_x = self.cursor_x.saturating_add(amount);
-                    self.cursor_x = self.cursor_x.min(line_length);
-                    self.wish_cursor_x = self.cursor_x;
-                }
-            }
-        }
-        self.expand_selection();
-        if self.selection.is_some() {
-            self.draw()
-        } else {
-            self.draw_cursor()
-        }
-    }
-
-    fn movement_underscore(&mut self) -> io::Result<()> {
-        let mut amount = self.cursor_x;
+    fn movement_underscore(&mut self) {
         let mut jmp = 0;
         for (i, c) in self.get_current_text_line().chars().enumerate() {
             if !c.is_whitespace() {
@@ -376,16 +360,10 @@ impl ScrollbackBuffer {
                 break;
             }
         }
-        if self.cursor_x > jmp {
-            amount = amount.saturating_sub(jmp);
-            self.horizontal_movement(HorizontalDirection::Left, amount)
-        } else {
-            amount = jmp.saturating_sub(amount);
-            self.horizontal_movement(HorizontalDirection::Right, amount)
-        }
+        self.move_horizontally_to(jmp);
     }
 
-    fn movement_w(&mut self, whitespace: bool) -> io::Result<()> {
+    fn movement_w(&mut self, whitespace: bool) {
         // TODO: Add wrapping when at end of line -> next line
         let line = self.get_current_text_line();
         let mut spaced = line
@@ -404,10 +382,10 @@ impl ScrollbackBuffer {
                 spaced = true;
             }
         }
-        self.horizontal_movement(HorizontalDirection::Right, amount)
+        self.move_horizontally_by(amount as isize);
     }
 
-    fn movement_b(&mut self, whitespace: bool) -> io::Result<()> {
+    fn movement_b(&mut self, whitespace: bool) {
         // TODO: Add wrapping at start of line -> previous line
         let line = &self.get_current_text_line();
         let mut amount = 0;
@@ -425,10 +403,10 @@ impl ScrollbackBuffer {
                 break;
             }
         }
-        self.horizontal_movement(HorizontalDirection::Left, amount)
+        self.move_horizontally_by(-(amount as isize));
     }
 
-    fn movement_e(&mut self, whitespace: bool) -> io::Result<()> {
+    fn movement_e(&mut self, whitespace: bool) {
         // TODO: Add wrapping at end of line -> next line
         let line = &self.get_current_text_line();
         let start = get_utf_index(&line, self.cursor_x + 1);
@@ -446,40 +424,26 @@ impl ScrollbackBuffer {
                 break;
             }
         }
-        self.horizontal_movement(HorizontalDirection::Right, amount)
+        self.move_horizontally_by(amount as isize);
     }
 
     #[allow(non_snake_case)]
-    fn movement_G(&mut self) -> io::Result<()> {
-        self.vertical_movement(
-            VerticalDirection::Down,
-            self.lines.len() - self.get_cursor_logical_y(),
-        )
+    fn movement_G(&mut self) {
+        self.move_to(self.wish_cursor_x, self.lines.len().saturating_sub(1));
     }
 
-    // BUG: Only scrolls to the top of the viewport
-    fn movement_gg(&mut self) -> io::Result<()> {
+    fn movement_gg(&mut self) -> bool {
         if let Some(last) = self.input_buffer.iter().last()
             && last == &KeyCode::Char('g')
         {
-            debug!(
-                "y = {}, viewport_start = {}, viewport_end = {}, term_height = {}",
-                self.get_cursor_logical_y(),
-                self.viewport_start,
-                self.viewport_end,
-                self.term_height
-            );
-            self.vertical_movement(VerticalDirection::Up, self.get_cursor_logical_y())?;
+            self.move_to(self.wish_cursor_x, 0);
+            return true;
         }
-        Ok(())
-    }
-
-    fn get_cursor_logical_y(&self) -> usize {
-        self.viewport_start + self.cursor_y
+        return false;
     }
 
     fn get_current_text_line(&self) -> &str {
-        &self.lines[self.get_cursor_logical_y()]
+        &self.text_lines[self.logical_y]
     }
 
     /// Warning: gets the utf-8 length
@@ -488,7 +452,7 @@ impl ScrollbackBuffer {
     }
 
     fn expand_selection(&mut self) {
-        let y = self.get_cursor_logical_y();
+        let y = self.logical_y;
         if let Some(sel) = &mut self.selection {
             match sel.sel_end {
                 SelectedEnd::Start => {
