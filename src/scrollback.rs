@@ -1,4 +1,5 @@
 use crate::selection::*;
+use crate::utils::get_utf_index;
 use crossterm::{
     QueueableCommand,
     clipboard::CopyToClipboard,
@@ -8,7 +9,6 @@ use crossterm::{
     style::{Color, Print, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType},
 };
-use log::debug;
 use std::collections::VecDeque;
 use std::io::{self, Write, stdin, stdout};
 use std::{cmp::min, io::Stdout};
@@ -22,14 +22,14 @@ const INPUT_BUFFER_SIZE: usize = 4;
 pub struct ScrollbackBuffer {
     lines: Vec<String>,
     text_lines: Vec<String>, // Lines without escape sequences
-    cursor_x: usize,
-    logical_y: usize,
+    cursor_x: usize,         // This is both the physical and logical position
     wish_cursor_x: usize,
+    logical_y: usize,
     term_height: usize,
     viewport_start: usize,
     viewport_end: usize,
-    selection: Option<Selection>, // We'll assume that start is always before end
     input_buffer: VecDeque<KeyCode>,
+    selection: Option<Selection>, // We'll assume that start is always before end
 }
 
 impl ScrollbackBuffer {
@@ -79,83 +79,39 @@ impl ScrollbackBuffer {
 
     pub fn handle_key_event(&mut self, event: KeyEvent) -> io::Result<bool> {
         match event.code {
-            KeyCode::Char('q') => {
-                return Ok(true);
-            }
-            KeyCode::Char('j') => {
-                self.move_vertically_by(1);
-                self.movement_suffix(true)?;
-            }
-            KeyCode::Char('k') => {
-                self.move_vertically_by(-1);
-                self.movement_suffix(true)?;
-            }
-            KeyCode::Char('d') => {
-                // Replaces ctrl+d
-                self.move_vertically_by(SCROLL_JUMP as isize);
-                self.movement_suffix(true)?;
-            }
-            KeyCode::Char('u') => {
-                // Replaces ctrl+u
-                self.move_vertically_by(-(SCROLL_JUMP as isize));
-                self.movement_suffix(true)?;
-            }
-            KeyCode::Char('h') => {
-                self.move_horizontally_by(-1);
-                self.movement_suffix(false)?;
-            }
-            KeyCode::Char('l') => {
-                self.move_horizontally_by(1);
-                self.movement_suffix(false)?;
-            }
+            KeyCode::Char('q') => return Ok(true),
 
-            KeyCode::Char('0') => {
-                self.move_horizontally_to(0);
-                self.movement_suffix(false)?;
-            }
-            KeyCode::Char('_') => {
-                self.movement_underscore();
-                self.movement_suffix(false)?;
-            }
-            KeyCode::Char('$') => {
-                self.move_horizontally_to(self.get_current_text_line_len().saturating_sub(1));
-                self.movement_suffix(false)?;
-            }
-            KeyCode::Char('w') => {
-                self.movement_w(false);
-                self.movement_suffix(false)?;
-            }
-            KeyCode::Char('W') => {
-                self.movement_w(true);
-                self.movement_suffix(false)?;
-            }
-            KeyCode::Char('b') => {
-                self.movement_b(false);
-                self.movement_suffix(false)?;
-            }
-            KeyCode::Char('B') => {
-                self.movement_b(true);
-                self.movement_suffix(false)?;
-            }
-            KeyCode::Char('e') => {
-                self.movement_e(false);
-                self.movement_suffix(false)?;
-            }
-            KeyCode::Char('E') => {
-                self.movement_e(true);
-                self.movement_suffix(false)?;
-            }
-            KeyCode::Char('G') => {
-                self.movement_G();
-                self.movement_suffix(true)?;
-            }
+            // Simple movement
+            KeyCode::Char('j') => self.move_vertically_by(1)?,
+            KeyCode::Char('k') => self.move_vertically_by(-1)?,
+            KeyCode::Char('d') => self.move_vertically_by(SCROLL_JUMP as isize)?, // Replaces ctrl+d
+            KeyCode::Char('u') => self.move_vertically_by(-(SCROLL_JUMP as isize))?, // Replaces ctrl+u
+            KeyCode::Char('h') => self.move_horizontally_by(-1)?,
+            KeyCode::Char('l') => self.move_horizontally_by(1)?,
+
+            // Movement to the end
+            KeyCode::Char('0') => self.move_horizontally_to(0)?,
+            KeyCode::Char('_') => self.movement_underscore()?,
+            KeyCode::Char('$') => self.movement_dollar()?,
+
+            // Movement to next/prev word
+            KeyCode::Char('w') => self.movement_w(false)?,
+            KeyCode::Char('W') => self.movement_w(true)?,
+            KeyCode::Char('b') => self.movement_b(false)?,
+            KeyCode::Char('B') => self.movement_b(true)?,
+            KeyCode::Char('e') => self.movement_e(false)?,
+            KeyCode::Char('E') => self.movement_e(true)?,
+
+            // Top/Bottom movement
+            KeyCode::Char('G') => self.movement_G()?,
             KeyCode::Char('g') => {
-                if self.movement_gg() {
+                if self.movement_gg()? {
                     self.movement_suffix(true)?;
                 }
                 self.input_buffer.push_back(event.code);
             }
 
+            // Selection motions
             KeyCode::Char('v') => {
                 self.selection = Some(Selection::with_coords(
                     self.cursor_x,
@@ -172,6 +128,7 @@ impl ScrollbackBuffer {
                 self.selection = None;
                 self.draw()?;
             }
+
             _ => {
                 self.input_buffer.push_back(event.code);
             }
@@ -182,8 +139,7 @@ impl ScrollbackBuffer {
     pub fn draw(&self) -> io::Result<()> {
         let mut out = stdout();
         out.queue(Clear(ClearType::All))?;
-
-        for (i, line) in self.lines[self.viewport_start..self.viewport_end + 1]
+        for (i, line) in self.lines[self.viewport_start..self.viewport_end.saturating_add(1)]
             .iter()
             .enumerate()
         {
@@ -271,11 +227,8 @@ impl ScrollbackBuffer {
             self.cursor_x as u16,
             self.get_physical_cursor_y() as u16,
         ))?;
-        match &self.selection {
-            Some(sel) => {
-                self.draw_selection(&sel, &mut out)?;
-            }
-            None => {}
+        if let Some(sel) = &self.selection {
+            self.draw_selection(&sel, &mut out)?;
         }
         out.flush()?;
         Ok(())
@@ -285,39 +238,44 @@ impl ScrollbackBuffer {
         self.logical_y.saturating_sub(self.viewport_start)
     }
 
-    fn move_to(&mut self, x: usize, y: usize) {
+    fn move_to(&mut self, x: usize, y: usize) -> io::Result<()> {
         self.logical_y = min(y, self.lines.len().saturating_sub(1));
-        let line_len = self.get_current_text_line_len();
+        let line_len = self.current_line_len();
         self.cursor_x = min(x, line_len.saturating_sub(1));
+        self.movement_suffix(true)
     }
 
-    fn move_vertically_by(&mut self, amount: isize) {
+    fn move_vertically_by(&mut self, amount: isize) -> io::Result<()> {
         self.logical_y = min(
             self.logical_y.saturating_add_signed(amount),
             self.lines.len().saturating_sub(1),
         );
-        let line_len = self.get_current_text_line_len();
+        let line_len = self.current_line_len();
         self.cursor_x = min(self.wish_cursor_x, line_len.saturating_sub(1));
+        self.movement_suffix(true)
     }
 
-    fn move_vertically_to(&mut self, y: usize) {
-        self.move_to(self.cursor_x, y);
-        let line_len = self.get_current_text_line_len();
+    fn move_vertically_to(&mut self, y: usize) -> io::Result<()> {
+        self.move_to(self.cursor_x, y)?;
+        let line_len = self.current_line_len();
         self.cursor_x = min(self.wish_cursor_x, line_len.saturating_sub(1));
+        self.movement_suffix(true)
     }
 
-    fn move_horizontally_by(&mut self, amount: isize) {
-        let line_len = self.get_current_text_line_len();
+    fn move_horizontally_by(&mut self, amount: isize) -> io::Result<()> {
+        let line_len = self.current_line_len();
         self.cursor_x = min(
             self.cursor_x.saturating_add_signed(amount),
             line_len.saturating_sub(1),
         );
         self.wish_cursor_x = self.cursor_x;
+        self.movement_suffix(false)
     }
 
-    fn move_horizontally_to(&mut self, x: usize) {
-        self.move_to(x, self.logical_y);
+    fn move_horizontally_to(&mut self, x: usize) -> io::Result<()> {
+        self.move_to(x, self.logical_y)?;
         self.wish_cursor_x = self.cursor_x;
+        self.movement_suffix(false)
     }
 
     fn move_viewport(&mut self) -> bool {
@@ -352,20 +310,20 @@ impl ScrollbackBuffer {
         }
     }
 
-    fn movement_underscore(&mut self) {
+    fn movement_underscore(&mut self) -> io::Result<()> {
         let mut jmp = 0;
-        for (i, c) in self.get_current_text_line().chars().enumerate() {
+        for (i, c) in self.current_line().chars().enumerate() {
             if !c.is_whitespace() {
                 jmp = i;
                 break;
             }
         }
-        self.move_horizontally_to(jmp);
+        self.move_horizontally_to(jmp)
     }
 
-    fn movement_w(&mut self, whitespace: bool) {
+    fn movement_w(&mut self, whitespace: bool) -> io::Result<()> {
         // TODO: Add wrapping when at end of line -> next line
-        let line = self.get_current_text_line();
+        let line = self.current_line();
         let mut spaced = line
             .chars()
             .nth(get_utf_index(line, self.cursor_x))
@@ -382,12 +340,12 @@ impl ScrollbackBuffer {
                 spaced = true;
             }
         }
-        self.move_horizontally_by(amount as isize);
+        self.move_horizontally_by(amount as isize)
     }
 
-    fn movement_b(&mut self, whitespace: bool) {
+    fn movement_b(&mut self, whitespace: bool) -> io::Result<()> {
         // TODO: Add wrapping at start of line -> previous line
-        let line = &self.get_current_text_line();
+        let line = &self.current_line();
         let mut amount = 0;
         let end = get_utf_index(&line, self.cursor_x);
         for (i, c) in line[..end].chars().rev().enumerate() {
@@ -403,12 +361,12 @@ impl ScrollbackBuffer {
                 break;
             }
         }
-        self.move_horizontally_by(-(amount as isize));
+        self.move_horizontally_by(-(amount as isize))
     }
 
-    fn movement_e(&mut self, whitespace: bool) {
+    fn movement_e(&mut self, whitespace: bool) -> io::Result<()> {
         // TODO: Add wrapping at end of line -> next line
-        let line = &self.get_current_text_line();
+        let line = &self.current_line();
         let start = get_utf_index(&line, self.cursor_x + 1);
         let line_end = &line[start..];
         let len = line_end.chars().enumerate().count().saturating_sub(1);
@@ -424,31 +382,37 @@ impl ScrollbackBuffer {
                 break;
             }
         }
-        self.move_horizontally_by(amount as isize);
+        self.move_horizontally_by(amount as isize)
+    }
+
+    fn movement_dollar(&mut self) -> io::Result<()> {
+        self.move_horizontally_to(self.current_line_len().saturating_sub(1))
     }
 
     #[allow(non_snake_case)]
-    fn movement_G(&mut self) {
-        self.move_to(self.wish_cursor_x, self.lines.len().saturating_sub(1));
+    fn movement_G(&mut self) -> io::Result<()> {
+        self.move_to(self.wish_cursor_x, self.lines.len().saturating_sub(1))
     }
 
-    fn movement_gg(&mut self) -> bool {
+    fn movement_gg(&mut self) -> io::Result<bool> {
         if let Some(last) = self.input_buffer.iter().last()
             && last == &KeyCode::Char('g')
         {
-            self.move_to(self.wish_cursor_x, 0);
-            return true;
+            self.move_to(self.wish_cursor_x, 0)?;
+            return Ok(true);
         }
-        return false;
+        return Ok(false);
     }
 
-    fn get_current_text_line(&self) -> &str {
+    /// Gets the current text_line
+    fn current_line(&self) -> &str {
         &self.text_lines[self.logical_y]
     }
 
+    /// Gets the current text_line
     /// Warning: gets the utf-8 length
-    fn get_current_text_line_len(&self) -> usize {
-        self.get_current_text_line().chars().count()
+    fn current_line_len(&self) -> usize {
+        self.current_line().chars().count()
     }
 
     fn expand_selection(&mut self) {
@@ -505,11 +469,4 @@ impl ScrollbackBuffer {
         }
         Ok(())
     }
-}
-
-fn get_utf_index(line: &str, idx: usize) -> usize {
-    line.char_indices()
-        .nth(idx)
-        .map(|(i, _)| i)
-        .unwrap_or(line.len())
 }
