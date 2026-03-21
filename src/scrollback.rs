@@ -1,5 +1,5 @@
-use crate::selection::*;
 use crate::utils::get_utf_index;
+use crate::{selection::*, utils::VimCharExt};
 use crossterm::{
     QueueableCommand,
     clipboard::CopyToClipboard,
@@ -9,6 +9,7 @@ use crossterm::{
     style::{Color, Print, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType},
 };
+use log::*;
 use std::collections::VecDeque;
 use std::io::{self, Write, stdin, stdout};
 use std::{cmp::min, io::Stdout};
@@ -245,6 +246,30 @@ impl ScrollbackBuffer {
         self.movement_suffix(true)
     }
 
+    // BUG: should execute movement function on next line and not just go to index 0
+    fn wrap_to_next(&mut self) -> io::Result<()> {
+        let mut wrapped = false;
+        let y = self.logical_y.saturating_add(1);
+        if y <= self.lines.len().saturating_sub(1) {
+            self.logical_y = y;
+            self.cursor_x = 0;
+            wrapped = true;
+        }
+        self.movement_suffix(wrapped)
+    }
+
+    // BUG: should execute movement function on previous line and not just go to end of line
+    fn wrap_to_previous(&mut self) -> io::Result<()> {
+        let mut wrapped = false;
+        let y = self.logical_y.saturating_sub(1);
+        if y > 0 {
+            self.logical_y = y;
+            self.cursor_x = self.current_line_len().saturating_sub(1);
+            wrapped = true;
+        }
+        self.movement_suffix(wrapped)
+    }
+
     fn move_vertically_by(&mut self, amount: isize) -> io::Result<()> {
         self.logical_y = min(
             self.logical_y.saturating_add_signed(amount),
@@ -305,7 +330,6 @@ impl ScrollbackBuffer {
             self.expand_selection();
             self.draw()
         } else {
-            self.expand_selection();
             self.draw_cursor()
         }
     }
@@ -322,40 +346,54 @@ impl ScrollbackBuffer {
     }
 
     fn movement_w(&mut self, whitespace: bool) -> io::Result<()> {
-        // TODO: Add wrapping when at end of line -> next line
         let line = self.current_line();
         let mut spaced = line
             .chars()
-            .nth(get_utf_index(line, self.cursor_x))
+            .nth(self.cursor_x)
             .unwrap_or('a')
-            .is_ascii_punctuation();
+            .is_vim_punctuation();
         let mut amount = 0;
-        let start = min(self.cursor_x + 1, line.len() - 1);
+        let start = get_utf_index(&line, self.cursor_x.saturating_add(1));
         for (i, c) in line[start..].chars().enumerate() {
-            if (!whitespace && c.is_ascii_punctuation()) || (spaced && !c.is_whitespace()) {
-                amount = i + 1;
+            let prev_is_punctuation = line
+                .chars()
+                .nth(self.cursor_x.saturating_add(i))
+                .unwrap_or('a')
+                .is_vim_punctuation();
+            if (!whitespace && c.is_vim_punctuation() && !prev_is_punctuation)
+                || (spaced && !c.is_whitespace() && !c.is_vim_punctuation())
+            {
+                amount = i.saturating_add(1);
                 break;
             }
             if !spaced && c.is_whitespace() {
                 spaced = true;
             }
         }
-        self.move_horizontally_by(amount as isize)
+        if amount != 0 {
+            self.move_horizontally_by(amount as isize)
+        } else {
+            self.wrap_to_next()
+        }
     }
 
+    // BUG: prevalent to all motions under. When multiple punctuations are contiguous,
+    // it won't skip them, it will go over each individually. Example: "-------"
     fn movement_b(&mut self, whitespace: bool) -> io::Result<()> {
-        // TODO: Add wrapping at start of line -> previous line
         let line = &self.current_line();
         let mut amount = 0;
         let end = get_utf_index(&line, self.cursor_x);
+        if self.cursor_x == 0 {
+            return self.wrap_to_previous();
+        }
         for (i, c) in line[..end].chars().rev().enumerate() {
             let index = end.saturating_sub(i);
             let peek = line.chars().nth(index.saturating_sub(2)).unwrap_or('a');
             if (!c.is_whitespace()
                 && (peek.is_whitespace()
-                    || (peek.is_ascii_punctuation() && !whitespace)
+                    || (peek.is_vim_punctuation() && !whitespace)
                     || index <= 1))
-                || (c.is_ascii_punctuation() && !whitespace)
+                || (c.is_vim_punctuation() && !whitespace)
             {
                 amount = min(i + 1, end);
                 break;
@@ -365,24 +403,25 @@ impl ScrollbackBuffer {
     }
 
     fn movement_e(&mut self, whitespace: bool) -> io::Result<()> {
-        // TODO: Add wrapping at end of line -> next line
         let line = &self.current_line();
-        let start = get_utf_index(&line, self.cursor_x + 1);
+        let start = get_utf_index(&line, self.cursor_x.saturating_add(1));
         let line_end = &line[start..];
-        let len = line_end.chars().enumerate().count().saturating_sub(1);
-        let mut amount = 0;
+        let mut len = line_end.chars().enumerate().count();
+        if len <= 0 {
+            return self.wrap_to_next();
+        }
+        len = len.saturating_sub(1);
         for (i, c) in line_end.chars().enumerate() {
             let peek = line_end.chars().nth(i + 1).unwrap_or('a');
             if (!c.is_whitespace()
-                && (peek.is_whitespace() || (peek.is_ascii_punctuation() && !whitespace)))
-                || (c.is_ascii_punctuation() && !whitespace)
+                && (peek.is_whitespace() || (peek.is_vim_punctuation() && !whitespace)))
+                || (c.is_vim_punctuation() && !whitespace)
                 || i == len
             {
-                amount = min(i + 1, len + 1);
-                break;
+                return self.move_horizontally_by(min(i + 1, len + 1) as isize);
             }
         }
-        self.move_horizontally_by(amount as isize)
+        Ok(())
     }
 
     fn movement_dollar(&mut self) -> io::Result<()> {
