@@ -1,8 +1,9 @@
 use super::ScrollbackBuffer;
 use super::*;
-use log::*;
 use std::cmp::min;
 use std::io::{self};
+
+type WrappingMotionFn = fn(&mut ScrollbackBuffer, bool, bool) -> io::Result<()>;
 
 impl ScrollbackBuffer {
     pub(crate) fn move_to(&mut self, x: usize, y: usize) -> io::Result<()> {
@@ -12,8 +13,12 @@ impl ScrollbackBuffer {
         self.movement_suffix(true)
     }
 
-    // BUG: should execute movement function on next line and not just go to index 0
-    pub(crate) fn wrap_to_next(&mut self) -> io::Result<()> {
+    pub(crate) fn wrap_to_next(
+        &mut self,
+        whitespace: bool,
+        already_wrapped: bool,
+        motion: WrappingMotionFn,
+    ) -> io::Result<()> {
         let mut wrapped = false;
         let y = self.logical_y.saturating_add(1);
         if y <= self.lines.len().saturating_sub(1) {
@@ -21,11 +26,16 @@ impl ScrollbackBuffer {
             self.cursor_x = 0;
             wrapped = true;
         }
-        self.movement_suffix(wrapped)
+        self.movement_suffix(wrapped)?;
+        motion(self, whitespace, already_wrapped)
     }
 
-    // BUG: should execute movement function on previous line and not just go to end of line
-    pub(crate) fn wrap_to_previous(&mut self) -> io::Result<()> {
+    pub(crate) fn wrap_to_previous(
+        &mut self,
+        whitespace: bool,
+        already_wrapped: bool,
+        motion: WrappingMotionFn,
+    ) -> io::Result<()> {
         let mut wrapped = false;
         let y = self.logical_y.saturating_sub(1);
         if y > 0 {
@@ -33,7 +43,8 @@ impl ScrollbackBuffer {
             self.cursor_x = self.current_line_len().saturating_sub(1);
             wrapped = true;
         }
-        self.movement_suffix(wrapped)
+        self.movement_suffix(wrapped)?;
+        motion(self, whitespace, already_wrapped)
     }
 
     pub(crate) fn move_vertically_by(&mut self, amount: isize) -> io::Result<()> {

@@ -14,3 +14,13 @@ impl VimCharExt for char {
         self.is_ascii_punctuation()
     }
 }
+
+/// Logical index in utf-8 indices
+pub fn first_non_whitespace_idx_on(line: &str) -> Option<usize> {
+    for (i, c) in line.chars().enumerate() {
+        if !c.is_whitespace() {
+            return Some(i);
+        }
+    }
+    None
+}

@@ -33,7 +33,9 @@ the terminal. It will remain functional but might not be the best experience.
 - [x] Copying to clipboard
 - [x] More advanced movement keys (b, w, W, e, 0, $, gg, G, etc...)
 - [x] Rework the movement system
-- [ ] Try and make the codebase extra clean and extensible
+- [x] Try and make the codebase extra clean and extensible
+- [x] Handle `\t`
+- [x] Handle multi-cell unicode chars
 - [ ] Even more advanced movement keys
 - [ ] More advanced selection motions (`vi"`, `va(`, etc...)
 - [ ] Nice UI to indicate copy mode is active

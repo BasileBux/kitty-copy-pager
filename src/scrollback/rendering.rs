@@ -10,10 +10,12 @@ use crossterm::{
 };
 use std::io::{self, Write, stdout};
 use std::{cmp::min, io::Stdout};
+use unicode_width::UnicodeWidthStr;
 
 impl ScrollbackBuffer {
     pub fn draw(&self) -> io::Result<()> {
         let mut out = stdout();
+        out.queue(SetBackgroundColor(Color::Reset))?;
         out.queue(Clear(ClearType::All))?;
         for (i, line) in self.lines[self.viewport_start..self.viewport_end.saturating_add(1)]
             .iter()
@@ -31,7 +33,7 @@ impl ScrollbackBuffer {
         }
 
         out.queue(MoveTo(
-            self.cursor_x as u16,
+            self.get_physical_cursor_x() as u16,
             self.get_physical_cursor_y() as u16,
         ))?;
         out.flush()?;
@@ -100,7 +102,7 @@ impl ScrollbackBuffer {
     pub(crate) fn draw_cursor(&self) -> io::Result<()> {
         let mut out = stdout();
         out.queue(MoveTo(
-            self.cursor_x as u16,
+            self.get_physical_cursor_x() as u16,
             self.get_physical_cursor_y() as u16,
         ))?;
         if let Some(sel) = &self.selection {
@@ -108,6 +110,10 @@ impl ScrollbackBuffer {
         }
         out.flush()?;
         Ok(())
+    }
+
+    fn get_physical_cursor_x(&self) -> usize {
+        self.current_line()[..get_utf_index(self.current_line(), self.cursor_x)].width()
     }
 
     pub(crate) fn get_physical_cursor_y(&self) -> usize {

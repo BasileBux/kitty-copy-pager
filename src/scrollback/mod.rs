@@ -13,6 +13,7 @@ const PROMPT_CURSOR_OFFSET: usize = 1;
 const SCROLLOFF: usize = 4;
 const SCROLL_JUMP: usize = 10;
 const INPUT_BUFFER_SIZE: usize = 4;
+const TAB_WIDTH: usize = 8;
 
 pub struct ScrollbackBuffer {
     pub(crate) lines: Vec<String>,
@@ -31,8 +32,10 @@ impl ScrollbackBuffer {
     pub fn new() -> io::Result<Self> {
         let mut raw_lines = Vec::<String>::new();
         let mut text_lines = Vec::<String>::new();
+        let tab_replacement = String::from(" ").repeat(TAB_WIDTH);
         for line in stdin().lines() {
-            let line = line?;
+            let mut line = line?;
+            line = line.replace("\t", &tab_replacement);
             let stripped = String::from_utf8_lossy(&strip(line.as_bytes())).into_owned();
             text_lines.push(stripped);
             raw_lines.push(line);
@@ -90,12 +93,12 @@ impl ScrollbackBuffer {
             KeyCode::Char('$') => self.movement_dollar()?,
 
             // Movement to next/prev word
-            KeyCode::Char('w') => self.movement_w(false)?,
-            KeyCode::Char('W') => self.movement_w(true)?,
-            KeyCode::Char('b') => self.movement_b(false)?,
-            KeyCode::Char('B') => self.movement_b(true)?,
-            KeyCode::Char('e') => self.movement_e(false)?,
-            KeyCode::Char('E') => self.movement_e(true)?,
+            KeyCode::Char('w') => self.movement_w(false, false)?,
+            KeyCode::Char('W') => self.movement_w(true, false)?,
+            KeyCode::Char('b') => self.movement_b(false, false)?,
+            KeyCode::Char('B') => self.movement_b(true, false)?,
+            KeyCode::Char('e') => self.movement_e(false, false)?,
+            KeyCode::Char('E') => self.movement_e(true, false)?,
 
             // Top/Bottom movement
             KeyCode::Char('G') => self.movement_G()?,
