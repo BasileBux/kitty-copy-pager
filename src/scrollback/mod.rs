@@ -89,7 +89,7 @@ impl ScrollbackBuffer {
 
             // Movement to the end
             KeyCode::Char('0') => self.move_horizontally_to(0)?,
-            KeyCode::Char('_') => self.movement_underscore()?,
+            KeyCode::Char('_') | KeyCode::Char('^') => self.movement_underscore()?,
             KeyCode::Char('$') => self.movement_dollar()?,
 
             // Movement to next/prev word

@@ -37,5 +37,15 @@ the terminal. It will remain functional but might not be the best experience.
 - [x] Handle `\t`
 - [x] Handle multi-cell unicode chars
 - [ ] Even more advanced movement keys
+- [ ] Add search functionality (`/` and `?`)
 - [ ] More advanced selection motions (`vi"`, `va(`, etc...)
 - [ ] Nice UI to indicate copy mode is active
+
+**Missing key Vim movements:**
+- `+` / `-` next/prev line (first non-blank)
+- `H` / `M` / `L` top/middle/bottom of screen
+- `f` / `F` / `t` / `T` find char fwd/back
+- `{` / `}` paragraph
+- `(` / `)` sentence
+- `Ctrl-f` / `Ctrl-b` page down/up
+- `%` matching bracket

@@ -14,7 +14,7 @@ use std::time::Duration;
 use log::*;
 use simplelog::*;
 
-const LOGGING_ENABLED: bool = true;
+const LOGGING_ENABLED: bool = false;
 
 const INPUT_POLLING_RATE: u64 = 100;
 
