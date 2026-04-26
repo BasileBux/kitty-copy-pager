@@ -1,19 +1,25 @@
+use crate::scrollback::search::Search;
 use crate::selection::*;
 use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::style::Color;
 use std::collections::VecDeque;
 use std::io::{self, stdin};
 use strip_ansi_escapes::strip;
 
 mod copy;
+mod modes;
 mod motions;
 mod movement;
 mod rendering;
+mod search;
 
-const PROMPT_CURSOR_OFFSET: usize = 1;
-const SCROLLOFF: usize = 4;
-const SCROLL_JUMP: usize = 10;
-const INPUT_BUFFER_SIZE: usize = 4;
-const TAB_WIDTH: usize = 8;
+pub(crate) const PROMPT_CURSOR_OFFSET: usize = 1;
+pub(crate) const SCROLLOFF: usize = 4;
+pub(crate) const SCROLL_JUMP: usize = 10;
+pub(crate) const INPUT_BUFFER_SIZE: usize = 4;
+pub(crate) const TAB_WIDTH: usize = 8;
+pub(crate) const STATUS_LINE_BG_COLOR: Color = Color::DarkGrey;
+pub(crate) const STATUS_LINE_FG_COLOR: Color = Color::White;
 
 pub struct ScrollbackBuffer {
     pub(crate) lines: Vec<String>,
@@ -22,10 +28,13 @@ pub struct ScrollbackBuffer {
     pub(crate) wish_cursor_x: usize,
     pub(crate) logical_y: usize,
     pub(crate) term_height: usize,
+    pub(crate) term_width: usize,
     pub(crate) viewport_start: usize,
     pub(crate) viewport_end: usize,
     pub(crate) input_buffer: VecDeque<KeyCode>,
     pub(crate) selection: Option<Selection>, // We'll assume that start is always before end
+    pub(crate) search_query: Option<String>,
+    pub(crate) search: Option<Search>,
 }
 
 impl ScrollbackBuffer {
@@ -40,7 +49,7 @@ impl ScrollbackBuffer {
             text_lines.push(stripped);
             raw_lines.push(line);
         }
-        let (_, term_height) = crossterm::terminal::size()?;
+        let (term_width, term_height) = crossterm::terminal::size()?;
 
         // The scrollback may contain empty lines at the end
         let mut last_non_empty_line_idx = raw_lines.len().saturating_sub(1);
@@ -63,75 +72,35 @@ impl ScrollbackBuffer {
             wish_cursor_x: cursor_x,
 
             term_height: term_height as usize,
+            term_width: term_width as usize,
 
-            viewport_start: raw_lines.len().saturating_sub(term_height as usize),
+            viewport_start: raw_lines
+                .len()
+                .saturating_sub((term_height as usize).saturating_sub(1)),
             viewport_end: raw_lines.len().saturating_sub(1),
 
             lines: raw_lines,
             text_lines,
 
             selection: None,
+            search_query: None,
+            search: None,
             input_buffer: VecDeque::with_capacity(INPUT_BUFFER_SIZE),
         })
     }
 
     pub fn handle_key_event(&mut self, event: KeyEvent) -> io::Result<bool> {
-        match event.code {
-            KeyCode::Char('q') => return Ok(true),
-
-            // Simple movement
-            KeyCode::Char('j') => self.move_vertically_by(1)?,
-            KeyCode::Char('k') => self.move_vertically_by(-1)?,
-            KeyCode::Char('d') => self.move_vertically_by(SCROLL_JUMP as isize)?, // Replaces ctrl+d
-            KeyCode::Char('u') => self.move_vertically_by(-(SCROLL_JUMP as isize))?, // Replaces ctrl+u
-            KeyCode::Char('h') => self.move_horizontally_by(-1)?,
-            KeyCode::Char('l') => self.move_horizontally_by(1)?,
-
-            // Movement to the end
-            KeyCode::Char('0') => self.move_horizontally_to(0)?,
-            KeyCode::Char('_') | KeyCode::Char('^') => self.movement_underscore()?,
-            KeyCode::Char('$') => self.movement_dollar()?,
-
-            // Movement to next/prev word
-            KeyCode::Char('w') => self.movement_w(false, false)?,
-            KeyCode::Char('W') => self.movement_w(true, false)?,
-            KeyCode::Char('b') => self.movement_b(false, false)?,
-            KeyCode::Char('B') => self.movement_b(true, false)?,
-            KeyCode::Char('e') => self.movement_e(false, false)?,
-            KeyCode::Char('E') => self.movement_e(true, false)?,
-
-            // Top/Bottom movement
-            KeyCode::Char('G') => self.movement_G()?,
-            KeyCode::Char('g') => {
-                if self.movement_gg()? {
-                    self.movement_suffix(true)?;
-                }
-                self.input_buffer.push_back(event.code);
-            }
-
-            // Selection motions
-            KeyCode::Char('v') => {
-                self.selection = Some(Selection::with_coords(
-                    self.cursor_x,
-                    self.logical_y,
-                    self.cursor_x,
-                    self.logical_y,
-                ));
-            }
-            KeyCode::Char('y') | KeyCode::Enter => {
-                self.copy_selection()?;
-                return Ok(true);
-            }
-            KeyCode::Esc => {
-                self.selection = None;
+        if self.search_query.is_some() {
+            let exec_search = self.search_mode(event)?;
+            if exec_search {
+                self.search().unwrap(); // BUG: only temp, should handle error properly
                 self.draw()?;
+                self.draw_status_line()?;
             }
-
-            _ => {
-                self.input_buffer.push_back(event.code);
-            }
+            Ok(false)
+        } else {
+            self.normal_mode(event)
         }
-        Ok(false)
     }
 
     /// Gets the current text_line

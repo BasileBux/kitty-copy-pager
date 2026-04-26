@@ -3,8 +3,8 @@ use super::ScrollbackBuffer;
 use crate::selection::*;
 use crate::utils::get_utf_index;
 use crossterm::{clipboard::CopyToClipboard, execute};
+use std::cmp::min;
 use std::io::{self, Write, stdout};
-use std::{cmp::min};
 
 impl ScrollbackBuffer {
     pub(crate) fn expand_selection(&mut self) {
@@ -34,6 +34,16 @@ impl ScrollbackBuffer {
     pub(crate) fn copy_selection(&self) -> io::Result<()> {
         if let Some(sel) = &self.selection {
             let mut copy_string = String::new();
+            if sel.start == sel.end {
+                let line = &self.text_lines[sel.start.y];
+                let char_index = get_utf_index(line, sel.start.x);
+                let next_char_index = get_utf_index(line, sel.start.x + 1);
+                copy_string.push_str(&line[char_index..next_char_index]);
+                let mut out = stdout();
+                execute!(out, CopyToClipboard::to_clipboard_from(&copy_string))?;
+                out.flush()?;
+                return Ok(());
+            }
             let end_y = sel.end.y.min(self.text_lines.len().saturating_sub(1));
             let last_i = end_y - sel.start.y;
 

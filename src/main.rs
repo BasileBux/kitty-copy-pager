@@ -36,6 +36,7 @@ fn main() -> io::Result<()> {
     stdout().flush()?;
 
     sb.draw()?;
+    sb.draw_status_line()?;
 
     loop {
         if poll(Duration::from_millis(INPUT_POLLING_RATE))? {

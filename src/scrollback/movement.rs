@@ -107,6 +107,7 @@ impl ScrollbackBuffer {
             self.expand_selection();
             self.draw()
         } else {
+            self.draw_status_line()?;
             self.draw_cursor()
         }
     }
