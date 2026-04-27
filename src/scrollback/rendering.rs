@@ -198,6 +198,7 @@ impl ScrollbackBuffer {
     pub(crate) fn draw_search(&self) -> io::Result<()> {
         if let Some(search) = &self.search
             && search.state == SearchState::Highlighted
+            && search.error.is_none()
         {
             for highlight in search.results.iter() {
                 let start = highlight.column_index;

@@ -105,7 +105,7 @@ impl ScrollbackBuffer {
 
     pub(crate) fn get_next_match(&self) -> Option<&SearchResult> {
         if let Some(search) = &self.search {
-            if search.results.is_empty() {
+            if search.error.is_some() || search.results.is_empty() {
                 return None;
             }
             Some(
@@ -141,7 +141,7 @@ impl ScrollbackBuffer {
 
     pub(crate) fn get_prev_match(&self) -> Option<&SearchResult> {
         if let Some(search) = &self.search {
-            if search.results.is_empty() {
+            if search.error.is_some() || search.results.is_empty() {
                 return None;
             }
             let prev_index = search
@@ -180,6 +180,9 @@ impl ScrollbackBuffer {
 
     pub(crate) fn get_closest_next_match(&self) -> Option<(&SearchResult, usize)> {
         if let Some(search) = &self.search {
+            if search.error.is_some() {
+                return None;
+            }
             for (i, result) in search.results.iter().enumerate() {
                 if result.line_index > self.logical_y
                     || (result.line_index == self.logical_y && result.column_index > self.cursor_x)
@@ -205,9 +208,10 @@ impl ScrollbackBuffer {
                     query: String::new(),
                     state: SearchState::Hidden,
                     results: Vec::new(),
-                    error: Some("Error: No search initiated".to_string()),
+                    error: Some("Error: No search results".to_string()),
                     current_result_index: 0,
                 });
+                self.draw_status_line()?;
             }
         }
         Ok(())
