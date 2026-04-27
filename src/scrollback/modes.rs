@@ -4,6 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use std::io::{self};
 
 use crate::scrollback::SCROLL_JUMP;
+use crate::scrollback::search::SearchState;
 use crate::selection::Selection;
 
 impl ScrollbackBuffer {
@@ -55,7 +56,11 @@ impl ScrollbackBuffer {
                 return Ok(true);
             }
             KeyCode::Esc => {
-                self.selection = None;
+                if self.selection.is_some() {
+                    self.selection = None;
+                } else if let Some(search) = &mut self.search {
+                    search.state = SearchState::Hidden;
+                }
                 self.draw()?;
             }
 

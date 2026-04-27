@@ -1,91 +1,103 @@
 use super::ScrollbackBuffer;
-use crate::scrollback::{STATUS_LINE_BG_COLOR, STATUS_LINE_FG_COLOR};
-use crossterm::{
-    QueueableCommand,
-    event::{KeyCode, KeyEvent},
-};
+use crossterm::event::{KeyCode, KeyEvent};
 use regex::Regex;
-use std::io::{self, Write};
+use std::io::{self};
 
 pub(crate) struct SearchResult {
     pub line_index: usize,
     pub column_index: usize,
 }
 
+#[derive(PartialEq)]
+pub(crate) enum SearchState {
+    Typing,
+    Highlighted,
+    Hidden,
+}
+
 pub(crate) struct Search {
-    pub query_size: usize, // Size is the same for all results, so we can store it once
+    pub query: String,
+    pub state: SearchState,
     pub results: Vec<SearchResult>,
+    pub error: Option<String>,
 }
 
 impl ScrollbackBuffer {
     pub(crate) fn search_mode(&mut self, event: KeyEvent) -> io::Result<bool> {
-        let mut out = io::stdout();
-        if self.search_query.is_none() {
-            self.search_query = Some(String::new());
-        } else {
+        if let Some(search) = &mut self.search {
+            if search.state != SearchState::Typing {
+                search.state = SearchState::Typing;
+                search.error = None;
+                search.results.clear();
+                search.query.clear();
+                self.draw_status_line()?;
+                return Ok(false);
+            }
+
             match event.code {
                 KeyCode::Char(c) => {
-                    self.search_query.as_mut().unwrap().push(c);
+                    search.query.push(c);
                 }
                 KeyCode::Backspace => {
-                    if let Some(ref mut s) = self.search_query {
-                        s.pop();
-                    }
+                    search.query.pop();
                 }
                 KeyCode::Esc => {
-                    self.search_query = None;
+                    search.state = SearchState::Hidden;
                 }
                 KeyCode::Enter => {
                     return Ok(true);
                 }
                 _ => {}
             }
+        } else {
+            self.search = Some(Search {
+                query: String::new(),
+                state: SearchState::Typing,
+                results: Vec::new(),
+                error: None,
+            });
         }
-        self.draw_status_line()?;
-        out.queue(crossterm::cursor::MoveTo(0, self.term_height as u16))?;
-        out.queue(crossterm::style::SetBackgroundColor(STATUS_LINE_BG_COLOR))?;
-        out.queue(crossterm::style::SetBackgroundColor(STATUS_LINE_BG_COLOR))?;
-        out.queue(crossterm::style::SetForegroundColor(STATUS_LINE_FG_COLOR))?;
-        out.queue(crossterm::terminal::Clear(
-            crossterm::terminal::ClearType::CurrentLine,
-        ))?;
-        let search_text = self.search_query.as_deref().unwrap_or("");
-        out.queue(crossterm::style::Print(format!("/{}", search_text)))?;
 
-        out.flush()?;
+        self.draw_status_line()?;
         Ok(false)
     }
 
-    pub(crate) fn search(&mut self) -> Result<(), ()> {
-        let query = self.search_query.as_ref().ok_or(())?;
-        if query.is_empty() {
-            return Err(());
-        }
+    pub(crate) fn search(&mut self) {
+        match &mut self.search {
+            Some(search) => {
+                search.state = SearchState::Hidden;
+                if search.query.is_empty() {
+                    search.error = Some("Error: empty search query".to_string());
+                    return;
+                }
 
-        let regex = Regex::new(query).map_err(|_| ())?;
-        let mut results = Vec::new();
+                match Regex::new(search.query.trim()) {
+                    Ok(regex) => {
+                        search.results.clear();
 
-        for (line_index, line) in self.text_lines.iter().enumerate() {
-            for mat in regex.find_iter(line) {
-                // mat.start() is byte offset, convert to char count for column index
-                let column_index = line[..mat.start()].chars().count();
-                results.push(SearchResult {
-                    line_index,
-                    column_index,
-                });
+                        for (line_index, line) in self.text_lines.iter().enumerate() {
+                            for mat in regex.find_iter(line) {
+                                let column_index = line[..mat.start()].chars().count();
+                                search.results.push(SearchResult {
+                                    line_index,
+                                    column_index,
+                                });
+                            }
+                        }
+                        if search.results.is_empty() {
+                            search.error =
+                                Some("Error: could not find any occurrences".to_string());
+                            return;
+                        }
+                    }
+                    Err(_) => {
+                        search.error = Some("Error: Invalid regex pattern".to_string());
+                        return;
+                    }
+                }
+                search.state = SearchState::Highlighted;
             }
+            _ => return,
         }
-
-        if results.is_empty() {
-            return Err(());
-        }
-
-        self.search = Some(Search {
-            query_size: query.chars().count(),
-            results,
-        });
-        self.search_query = None;
-
-        Ok(())
     }
 }

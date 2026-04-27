@@ -1,6 +1,10 @@
 use super::ScrollbackBuffer;
 
-use crate::scrollback::{STATUS_LINE_BG_COLOR, STATUS_LINE_FG_COLOR};
+use crate::scrollback::search::SearchState;
+use crate::scrollback::{
+    SEARCH_ERROR_FG_COLOR, SEARCH_HIGHLIGHT_BG_COLOR, SEARCH_HIGHLIGHT_FG_COLOR,
+    SELECTION_BG_COLOR, SELECTION_FG_COLOR, STATUS_LINE_BG_COLOR, STATUS_LINE_FG_COLOR,
+};
 use crate::selection::*;
 use crate::utils::get_utf_index;
 use crossterm::{
@@ -19,17 +23,33 @@ impl ScrollbackBuffer {
         out.queue(SetBackgroundColor(STATUS_LINE_BG_COLOR))?;
         out.queue(SetForegroundColor(STATUS_LINE_FG_COLOR))?;
         out.queue(Clear(ClearType::CurrentLine))?;
-        let status_text = format!("Ln {}, Col {}", self.logical_y + 1, self.cursor_x + 1);
-        out.queue(Print(format!(
-            "{}{}",
-            " ".repeat(self.term_width.saturating_sub(status_text.width())),
-            status_text,
-        )))?;
 
+        let mut cursor_x = self.get_physical_cursor_x() as u16;
+        let mut cursor_y = self.get_physical_cursor_y() as u16;
+
+        if let Some(search) = &self.search {
+            out.queue(MoveTo(0, self.term_height as u16))?;
+            if let Some(error) = &search.error {
+                out.queue(SetForegroundColor(SEARCH_ERROR_FG_COLOR))?;
+                out.queue(Print(error.as_str()))?;
+                out.queue(SetForegroundColor(STATUS_LINE_FG_COLOR))?;
+            } else {
+                if search.state == SearchState::Typing {
+                    cursor_y = self.term_height as u16;
+                    cursor_x = search.query.width() as u16 + 1;
+                }
+                out.queue(Print(&format!("/{}", search.query)))?;
+            }
+        }
+
+        let status_text = format!("Ln {}, Col {}", self.logical_y + 1, self.cursor_x + 1);
         out.queue(MoveTo(
-            self.get_physical_cursor_x() as u16,
-            self.get_physical_cursor_y() as u16,
+            self.term_width.saturating_sub(status_text.width()) as u16,
+            self.term_height as u16,
         ))?;
+        out.queue(Print(status_text))?;
+
+        out.queue(MoveTo(cursor_x, cursor_y))?;
         out.flush()
     }
 
@@ -158,8 +178,8 @@ impl ScrollbackBuffer {
             self.draw_highlight(
                 &sel.start,
                 &sel.end,
-                &Color::Black,
-                &Color::Yellow,
+                &SELECTION_FG_COLOR,
+                &SELECTION_BG_COLOR,
                 &mut out,
             )?;
         }
@@ -176,23 +196,23 @@ impl ScrollbackBuffer {
     }
 
     pub(crate) fn draw_search(&self) -> io::Result<()> {
-        match &self.search {
-            Some(search) => {
-                for highlight in search.results.iter() {
-                    let line = &self.text_lines[highlight.line_index];
-                    let start = get_utf_index(line, highlight.column_index);
-                    let end = get_utf_index(line, highlight.column_index + search.query_size);
-                    self.draw_highlight(
-                        &Vec2::new(start, highlight.line_index),
-                        &Vec2::new(end, highlight.line_index),
-                        &Color::Black,
-                        &Color::Green,
-                        &mut stdout(),
-                    )?;
-                }
-                Ok(())
+        if let Some(search) = &self.search
+            && search.state == SearchState::Highlighted
+        {
+            for highlight in search.results.iter() {
+                let line = &self.text_lines[highlight.line_index];
+                let start = get_utf_index(line, highlight.column_index);
+                let end =
+                    get_utf_index(line, highlight.column_index + search.query.chars().count());
+                self.draw_highlight(
+                    &Vec2::new(start, highlight.line_index),
+                    &Vec2::new(end, highlight.line_index),
+                    &SEARCH_HIGHLIGHT_FG_COLOR,
+                    &SEARCH_HIGHLIGHT_BG_COLOR,
+                    &mut stdout(),
+                )?;
             }
-            None => Ok(()),
         }
+        Ok(())
     }
 }

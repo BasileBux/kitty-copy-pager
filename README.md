@@ -22,7 +22,7 @@ scrollback_pager kitty-copy-mode --flags
 ```
 The scrollback is given in `stdin` to the pager.
 
-This won't work nicely in tmux or software which draws a whole lot of things in
+This won't work as nicely in tmux or software which draws a whole lot of things in
 the terminal. It will remain functional but might not be the best experience.
 
 ## TODO:
@@ -36,10 +36,12 @@ the terminal. It will remain functional but might not be the best experience.
 - [x] Try and make the codebase extra clean and extensible
 - [x] Handle `\t`
 - [x] Handle multi-cell unicode chars
-- [ ] Even more advanced movement keys
 - [ ] Add search functionality (`/` and `?`)
+- [ ] Make initial viewport at the correct position (currently it is always at the bottom)
+- [ ] Mouse scroll support (no click but only scroll)
+- [ ] Even more advanced movement keys
 - [ ] More advanced selection motions (`vi"`, `va(`, etc...)
-- [ ] Nice UI to indicate copy mode is active
+- [ ] Make the status bar look nicer
 
 **Missing key Vim movements:**
 - `+` / `-` next/prev line (first non-blank)

@@ -1,4 +1,4 @@
-use crate::scrollback::search::Search;
+use crate::scrollback::search::{Search, SearchState};
 use crate::selection::*;
 use crossterm::event::{KeyCode, KeyEvent};
 use crossterm::style::Color;
@@ -18,8 +18,17 @@ pub(crate) const SCROLLOFF: usize = 4;
 pub(crate) const SCROLL_JUMP: usize = 10;
 pub(crate) const INPUT_BUFFER_SIZE: usize = 4;
 pub(crate) const TAB_WIDTH: usize = 8;
+
 pub(crate) const STATUS_LINE_BG_COLOR: Color = Color::DarkGrey;
 pub(crate) const STATUS_LINE_FG_COLOR: Color = Color::White;
+
+pub(crate) const SEARCH_ERROR_FG_COLOR: Color = Color::Red;
+
+pub(crate) const SELECTION_BG_COLOR: Color = Color::Yellow;
+pub(crate) const SELECTION_FG_COLOR: Color = Color::Black;
+
+pub(crate) const SEARCH_HIGHLIGHT_BG_COLOR: Color = Color::Green;
+pub(crate) const SEARCH_HIGHLIGHT_FG_COLOR: Color = Color::Black;
 
 pub struct ScrollbackBuffer {
     pub(crate) lines: Vec<String>,
@@ -33,7 +42,6 @@ pub struct ScrollbackBuffer {
     pub(crate) viewport_end: usize,
     pub(crate) input_buffer: VecDeque<KeyCode>,
     pub(crate) selection: Option<Selection>, // We'll assume that start is always before end
-    pub(crate) search_query: Option<String>,
     pub(crate) search: Option<Search>,
 }
 
@@ -83,17 +91,18 @@ impl ScrollbackBuffer {
             text_lines,
 
             selection: None,
-            search_query: None,
             search: None,
             input_buffer: VecDeque::with_capacity(INPUT_BUFFER_SIZE),
         })
     }
 
     pub fn handle_key_event(&mut self, event: KeyEvent) -> io::Result<bool> {
-        if self.search_query.is_some() {
+        if let Some(search) = &self.search
+            && search.state == SearchState::Typing
+        {
             let exec_search = self.search_mode(event)?;
             if exec_search {
-                self.search().unwrap(); // BUG: only temp, should handle error properly
+                self.search();
                 self.draw()?;
                 self.draw_status_line()?;
             }
