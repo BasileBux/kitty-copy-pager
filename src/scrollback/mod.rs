@@ -19,6 +19,9 @@ pub(crate) const SCROLL_JUMP: usize = 10;
 pub(crate) const INPUT_BUFFER_SIZE: usize = 4;
 pub(crate) const TAB_WIDTH: usize = 8;
 
+pub(crate) const REAL_TIME_SEARCH: bool = true;
+pub(crate) const SMARTCASE_SEARCH: bool = true;
+
 pub(crate) const STATUS_LINE_BG_COLOR: Color = Color::DarkGrey;
 pub(crate) const STATUS_LINE_FG_COLOR: Color = Color::White;
 
@@ -101,8 +104,14 @@ impl ScrollbackBuffer {
             && search.state == SearchState::Typing
         {
             let exec_search = self.search_mode(event)?;
+
             if exec_search {
                 self.search();
+                if let Some(search) = &self.search
+                    && search.error.is_some()
+                {
+                    self.draw()?;
+                }
                 self.move_to_closest_next_match()?;
             }
             Ok(false)

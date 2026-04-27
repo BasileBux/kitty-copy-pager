@@ -198,9 +198,15 @@ impl ScrollbackBuffer {
             None => return Ok(()),
         };
 
+        // Draw highlights when:
+        // - PendingRedraw (search just executed)
+        // - Highlighted (already drawn before, force redraw)
+        // - Typing (real-time search active)
         if (search.state == SearchState::PendingRedraw
+            || search.state == SearchState::Typing
             || (force && search.state == SearchState::Highlighted))
             && search.error.is_none()
+            && !search.results.is_empty()
         {
             let offset = search.query.chars().count().saturating_sub(1);
             let mut out = io::stdout();
@@ -216,7 +222,10 @@ impl ScrollbackBuffer {
                     &mut out,
                 )?;
             }
-            search.state = SearchState::Highlighted;
+            // Only transition to Highlighted if not in Typing mode (real-time search)
+            if search.state != SearchState::Typing {
+                search.state = SearchState::Highlighted;
+            }
         }
         self.search = Some(search);
         Ok(())

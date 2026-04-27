@@ -1,7 +1,10 @@
-use super::ScrollbackBuffer;
+use super::{REAL_TIME_SEARCH, SMARTCASE_SEARCH, ScrollbackBuffer};
+use crossterm::QueueableCommand;
+use crossterm::cursor::MoveTo;
 use crossterm::event::{KeyCode, KeyEvent};
 use regex::Regex;
-use std::io::{self};
+use std::io::{self, Write, stdout};
+use unicode_width::UnicodeWidthStr;
 
 pub(crate) struct SearchResult {
     pub line_index: usize,
@@ -25,6 +28,17 @@ pub(crate) struct Search {
 }
 
 impl ScrollbackBuffer {
+    /// Builds regex pattern with smartcase support.
+    /// If SMARTCASE_SEARCH is enabled and query has no uppercase chars,
+    /// prepends (?i) for case-insensitive matching.
+    fn build_search_pattern(query: &str) -> String {
+        if SMARTCASE_SEARCH && !query.chars().any(|c| c.is_uppercase()) {
+            format!("(?i){}", query)
+        } else {
+            query.to_string()
+        }
+    }
+
     pub(crate) fn search_mode(&mut self, event: KeyEvent) -> io::Result<bool> {
         if let Some(search) = &mut self.search {
             if search.state != SearchState::Typing {
@@ -39,9 +53,15 @@ impl ScrollbackBuffer {
             match event.code {
                 KeyCode::Char(c) => {
                     search.query.push(c);
+                    if REAL_TIME_SEARCH {
+                        self.search_realtime();
+                    }
                 }
                 KeyCode::Backspace => {
                     search.query.pop();
+                    if REAL_TIME_SEARCH {
+                        self.search_realtime();
+                    }
                 }
                 KeyCode::Esc => {
                     search.state = SearchState::Hidden;
@@ -61,8 +81,57 @@ impl ScrollbackBuffer {
             });
         }
 
-        self.draw_status_line()?;
+        if REAL_TIME_SEARCH {
+            self.draw()?;
+            if let Some(search) = &self.search {
+                let cursor_x = search.query.width() + 1;
+                let cursor_y = self.term_height;
+                let mut out = stdout();
+                out.queue(MoveTo(cursor_x as u16, cursor_y as u16))?;
+                out.flush()?;
+            }
+        } else {
+            self.draw_status_line()?;
+        }
         Ok(false)
+    }
+
+    /// Performs real-time search while typing.
+    /// Silently ignores regex errors (for incomplete patterns) and clears results instead.
+    /// Note: Keeps state as Typing to stay in search mode.
+    pub(crate) fn search_realtime(&mut self) {
+        match &mut self.search {
+            Some(search) => {
+                search.error = None;
+                if search.query.is_empty() {
+                    search.results.clear();
+                    search.state = SearchState::Typing;
+                    return;
+                }
+                let pattern = Self::build_search_pattern(&search.query);
+                match Regex::new(&pattern) {
+                    Ok(regex) => {
+                        search.results.clear();
+
+                        for (line_index, line) in self.text_lines.iter().enumerate() {
+                            for mat in regex.find_iter(line) {
+                                let column_index = line[..mat.start()].chars().count();
+                                search.results.push(SearchResult {
+                                    line_index,
+                                    column_index,
+                                });
+                            }
+                        }
+                        search.state = SearchState::Typing;
+                    }
+                    Err(_) => {
+                        search.results.clear();
+                        search.state = SearchState::Typing;
+                    }
+                }
+            }
+            _ => return,
+        }
     }
 
     pub(crate) fn search(&mut self) {
@@ -70,11 +139,14 @@ impl ScrollbackBuffer {
             Some(search) => {
                 search.state = SearchState::Hidden;
                 if search.query.is_empty() {
+                    search.results.clear();
+                    search.state = SearchState::Hidden;
                     search.error = Some("Error: empty search query".to_string());
                     return;
                 }
 
-                match Regex::new(search.query.trim()) {
+                let pattern = Self::build_search_pattern(&search.query);
+                match Regex::new(&pattern) {
                     Ok(regex) => {
                         search.results.clear();
 
@@ -88,12 +160,16 @@ impl ScrollbackBuffer {
                             }
                         }
                         if search.results.is_empty() {
+                            search.results.clear();
+                            search.state = SearchState::Hidden;
                             search.error =
                                 Some("Error: could not find any occurrences".to_string());
                             return;
                         }
                     }
                     Err(_) => {
+                        search.results.clear();
+                        search.state = SearchState::Hidden;
                         search.error = Some("Error: Invalid regex pattern".to_string());
                         return;
                     }
