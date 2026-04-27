@@ -64,8 +64,15 @@ impl ScrollbackBuffer {
                 self.draw()?;
             }
 
+            // Search motions
             KeyCode::Char('/') => {
                 self.search_mode(event)?;
+            }
+            KeyCode::Char('n') => {
+                self.move_to_next_match()?;
+            }
+            KeyCode::Char('N') => {
+                self.move_to_prev_match()?;
             }
 
             _ => {

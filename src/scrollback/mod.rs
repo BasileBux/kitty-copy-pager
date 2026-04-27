@@ -103,8 +103,8 @@ impl ScrollbackBuffer {
             let exec_search = self.search_mode(event)?;
             if exec_search {
                 self.search();
-                self.draw()?;
-                self.draw_status_line()?;
+                self.draw_search()?;
+                self.move_to_closest_match()?;
             }
             Ok(false)
         } else {

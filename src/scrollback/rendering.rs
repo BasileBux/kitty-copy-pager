@@ -42,7 +42,7 @@ impl ScrollbackBuffer {
             }
         }
 
-        let status_text = format!("Ln {}, Col {}", self.logical_y + 1, self.cursor_x + 1);
+        let status_text = format!("Ln {}, Col {}", self.logical_y, self.cursor_x);
         out.queue(MoveTo(
             self.term_width.saturating_sub(status_text.width()) as u16,
             self.term_height as u16,
