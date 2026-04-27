@@ -200,10 +200,8 @@ impl ScrollbackBuffer {
             && search.state == SearchState::Highlighted
         {
             for highlight in search.results.iter() {
-                let line = &self.text_lines[highlight.line_index];
-                let start = get_utf_index(line, highlight.column_index);
-                let end =
-                    get_utf_index(line, highlight.column_index + search.query.chars().count());
+                let start = highlight.column_index;
+                let end = highlight.column_index + search.query.chars().count().saturating_sub(1);
                 self.draw_highlight(
                     &Vec2::new(start, highlight.line_index),
                     &Vec2::new(end, highlight.line_index),
