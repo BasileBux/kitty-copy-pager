@@ -27,7 +27,7 @@ pub(crate) const SEARCH_ERROR_FG_COLOR: Color = Color::Red;
 pub(crate) const SELECTION_BG_COLOR: Color = Color::Yellow;
 pub(crate) const SELECTION_FG_COLOR: Color = Color::Black;
 
-pub(crate) const SEARCH_HIGHLIGHT_BG_COLOR: Color = Color::Green;
+pub(crate) const SEARCH_HIGHLIGHT_BG_COLOR: Color = Color::Blue;
 pub(crate) const SEARCH_HIGHLIGHT_FG_COLOR: Color = Color::Black;
 
 pub struct ScrollbackBuffer {
@@ -103,8 +103,7 @@ impl ScrollbackBuffer {
             let exec_search = self.search_mode(event)?;
             if exec_search {
                 self.search();
-                self.draw_search()?;
-                self.move_to_closest_match()?;
+                self.move_to_closest_next_match()?;
             }
             Ok(false)
         } else {

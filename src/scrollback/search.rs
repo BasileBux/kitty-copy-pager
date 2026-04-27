@@ -11,6 +11,7 @@ pub(crate) struct SearchResult {
 #[derive(PartialEq)]
 pub(crate) enum SearchState {
     Typing,
+    PendingRedraw,
     Highlighted,
     Hidden,
 }
@@ -97,7 +98,7 @@ impl ScrollbackBuffer {
                         return;
                     }
                 }
-                search.state = SearchState::Highlighted;
+                search.state = SearchState::PendingRedraw;
             }
             _ => return,
         }
@@ -195,12 +196,38 @@ impl ScrollbackBuffer {
         None
     }
 
-    pub(crate) fn move_to_closest_match(&mut self) -> io::Result<()> {
-        match self.get_closest_next_match() {
+    pub(crate) fn get_closest_prev_match(&self) -> Option<(&SearchResult, usize)> {
+        if let Some(search) = &self.search {
+            if search.error.is_some() {
+                return None;
+            }
+            for (i, result) in search.results.iter().enumerate().rev() {
+                if result.line_index < self.logical_y
+                    || (result.line_index == self.logical_y && result.column_index < self.cursor_x)
+                {
+                    return Some((result, i));
+                }
+            }
+            return Some((
+                &search.results[search.results.len() - 1],
+                search.results.len() - 1,
+            ));
+        }
+        None
+    }
+
+    pub(crate) fn move_to_closest_match(&mut self, next: bool) -> io::Result<()> {
+        let closest_match = if next {
+            self.get_closest_next_match()
+        } else {
+            self.get_closest_prev_match()
+        };
+        match closest_match {
             Some((result, idx)) => {
                 self.move_to(result.column_index, result.line_index)?;
                 if let Some(search) = &mut self.search {
                     search.current_result_index = idx;
+                    search.state = SearchState::Highlighted;
                 }
             }
             None => {
@@ -215,5 +242,13 @@ impl ScrollbackBuffer {
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn move_to_closest_next_match(&mut self) -> io::Result<()> {
+        self.move_to_closest_match(true)
+    }
+
+    pub(crate) fn move_to_closest_prev_match(&mut self) -> io::Result<()> {
+        self.move_to_closest_match(false)
     }
 }

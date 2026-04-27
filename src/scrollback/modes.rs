@@ -69,10 +69,24 @@ impl ScrollbackBuffer {
                 self.search_mode(event)?;
             }
             KeyCode::Char('n') => {
-                self.move_to_next_match()?;
+                if let Some(search) = &mut self.search {
+                    if search.state != SearchState::Highlighted {
+                        search.state = SearchState::PendingRedraw;
+                        self.move_to_closest_next_match()?;
+                    } else {
+                        self.move_to_next_match()?;
+                    }
+                }
             }
             KeyCode::Char('N') => {
-                self.move_to_prev_match()?;
+                if let Some(search) = &mut self.search {
+                    if search.state != SearchState::Highlighted {
+                        search.state = SearchState::PendingRedraw;
+                        self.move_to_closest_prev_match()?;
+                    } else {
+                        self.move_to_prev_match()?;
+                    }
+                }
             }
 
             _ => {

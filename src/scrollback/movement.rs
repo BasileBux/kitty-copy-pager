@@ -108,6 +108,7 @@ impl ScrollbackBuffer {
             self.draw()
         } else {
             self.draw_status_line()?;
+            self.draw_search(false)?;
             self.draw_cursor()
         }
     }

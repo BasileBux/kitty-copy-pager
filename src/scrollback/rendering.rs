@@ -53,7 +53,7 @@ impl ScrollbackBuffer {
         out.flush()
     }
 
-    pub fn draw(&self) -> io::Result<()> {
+    pub fn draw(&mut self) -> io::Result<()> {
         let mut out = stdout();
         out.queue(SetBackgroundColor(Color::Reset))?;
         out.queue(Clear(ClearType::All))?;
@@ -64,17 +64,10 @@ impl ScrollbackBuffer {
             out.queue(MoveTo(0, i as u16))?;
             out.queue(Print(line))?;
         }
-        if let Some(sel) = &self.selection {
-            self.draw_highlight(
-                &sel.start,
-                &sel.end,
-                &Color::Black,
-                &Color::Yellow,
-                &mut out,
-            )?;
-        }
+
+        self.draw_selection(&mut out)?;
         self.draw_status_line()?;
-        self.draw_search()?;
+        self.draw_search(true)?;
 
         out.queue(MoveTo(
             self.get_physical_cursor_x() as u16,
@@ -174,17 +167,8 @@ impl ScrollbackBuffer {
             self.get_physical_cursor_x() as u16,
             self.get_physical_cursor_y() as u16,
         ))?;
-        if let Some(sel) = &self.selection {
-            self.draw_highlight(
-                &sel.start,
-                &sel.end,
-                &SELECTION_FG_COLOR,
-                &SELECTION_BG_COLOR,
-                &mut out,
-            )?;
-        }
-        out.flush()?;
-        Ok(())
+        self.draw_selection(&mut out)?;
+        out.flush()
     }
 
     fn get_physical_cursor_x(&self) -> usize {
@@ -195,23 +179,46 @@ impl ScrollbackBuffer {
         self.logical_y.saturating_sub(self.viewport_start)
     }
 
-    pub(crate) fn draw_search(&self) -> io::Result<()> {
-        if let Some(search) = &self.search
-            && search.state == SearchState::Highlighted
+    pub(crate) fn draw_selection(&self, out: &mut Stdout) -> io::Result<()> {
+        if let Some(sel) = &self.selection {
+            self.draw_highlight(
+                &sel.start,
+                &sel.end,
+                &SELECTION_FG_COLOR,
+                &SELECTION_BG_COLOR,
+                out,
+            )?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn draw_search(&mut self, force: bool) -> io::Result<()> {
+        let mut search = match self.search.take() {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+
+        if (search.state == SearchState::PendingRedraw
+            || (force && search.state == SearchState::Highlighted))
             && search.error.is_none()
         {
-            for highlight in search.results.iter() {
+            let offset = search.query.chars().count().saturating_sub(1);
+            let mut out = io::stdout();
+
+            for highlight in &search.results {
                 let start = highlight.column_index;
-                let end = highlight.column_index + search.query.chars().count().saturating_sub(1);
+                let end = highlight.column_index + offset;
                 self.draw_highlight(
                     &Vec2::new(start, highlight.line_index),
                     &Vec2::new(end, highlight.line_index),
                     &SEARCH_HIGHLIGHT_FG_COLOR,
                     &SEARCH_HIGHLIGHT_BG_COLOR,
-                    &mut stdout(),
+                    &mut out,
                 )?;
             }
+            search.state = SearchState::Highlighted;
         }
+        self.search = Some(search);
         Ok(())
     }
 }

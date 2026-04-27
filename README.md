@@ -36,7 +36,7 @@ the terminal. It will remain functional but might not be the best experience.
 - [x] Try and make the codebase extra clean and extensible
 - [x] Handle `\t`
 - [x] Handle multi-cell unicode chars
-- [ ] Add search functionality (`/` and `?`)
+- [x] Add search functionality `/`
 - [ ] Add realtime search highlighting (while typing the search query)
 - [ ] Make initial viewport at the correct position (currently it is always at the bottom)
 - [ ] Mouse scroll support (no click but only scroll)
