@@ -7,6 +7,17 @@ This was made as a scollback pager for the [kitty](https://sw.kovidgoyal.net/kit
 terminal. It receives the full scrollback in `stdin` and then renders it and allows
 to move with vim motions and copy text.
 
+## Features
+
+Vim motions for moving around, visual mode for selecting text, copying to clipboard.
+
+Mono-lina regex search with highlighting and navigaion with `n` and `N`. There is
+real-time search which can be disabled with a CLI flag. Also supports smart case
+search which can be disabled with a CLI flag as well.
+
+> [!WARNING] Resizing is not supported. We are working with the raw scrollback
+> which is the exact good size but won't work if terminal window is resized
+
 ## NOTES:
 
 The clipboard copy uses [crossterm::clipboard](https://docs.rs/crossterm/latest/crossterm/clipboard/struct.CopyToClipboard.html)
@@ -14,8 +25,9 @@ which might not work for 100% of setups but if your terminal doesn't suck it sho
 work.
 
 This is a work in progress. It should be working for the most part but still be a
-bit rough in some places. Super basic vim motions are implemented but more  will
-be added in the near future.
+bit rough in some places. The performance isn't great for yet but the goal is to
+have the smallest startup time. Super basic vim motions are implemented but more
+will be added in the near future.
 
 ```conf
 scrollback_pager kitty-copy-mode --flags
@@ -37,8 +49,10 @@ the terminal. It will remain functional but might not be the best experience.
 - [x] Handle `\t`
 - [x] Handle multi-cell unicode chars
 - [x] Add search functionality `/`
-- [ ] Add realtime search highlighting (while typing the search query)
+    - [x] Add realtime search highlighting (while typing the search query)
+    - [ ] Add match index in status bar (e.g. `[1/5]`)
 - [ ] Make initial viewport at the correct position (currently it is always at the bottom)
+- [ ] CLI flags for configuration
 - [ ] Mouse scroll support (no click but only scroll)
 - [ ] Even more advanced movement keys
 - [ ] More advanced selection motions (`vi"`, `va(`, etc...)
