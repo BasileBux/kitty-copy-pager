@@ -1,17 +1,14 @@
 use super::{REAL_TIME_SEARCH, SMARTCASE_SEARCH, ScrollbackBuffer};
-use crossterm::QueueableCommand;
-use crossterm::cursor::MoveTo;
 use crossterm::event::{KeyCode, KeyEvent};
 use regex::Regex;
-use std::io::{self, Write, stdout};
-use unicode_width::UnicodeWidthStr;
+use std::io::{self};
 
 pub(crate) struct SearchResult {
     pub line_index: usize,
     pub column_index: usize,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub(crate) enum SearchState {
     Typing,
     PendingRedraw,
@@ -65,6 +62,7 @@ impl ScrollbackBuffer {
                 }
                 KeyCode::Esc => {
                     search.state = SearchState::Hidden;
+                    self.draw()?;
                 }
                 KeyCode::Enter => {
                     return Ok(true);
@@ -83,13 +81,6 @@ impl ScrollbackBuffer {
 
         if REAL_TIME_SEARCH {
             self.draw()?;
-            if let Some(search) = &self.search {
-                let cursor_x = search.query.width() + 1;
-                let cursor_y = self.term_height;
-                let mut out = stdout();
-                out.queue(MoveTo(cursor_x as u16, cursor_y as u16))?;
-                out.flush()?;
-            }
         } else {
             self.draw_status_line()?;
         }

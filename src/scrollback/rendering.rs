@@ -2,7 +2,7 @@ use super::ScrollbackBuffer;
 
 use crate::scrollback::search::SearchState;
 use crate::scrollback::{
-    SEARCH_ERROR_FG_COLOR, SEARCH_HIGHLIGHT_BG_COLOR, SEARCH_HIGHLIGHT_FG_COLOR,
+    REAL_TIME_SEARCH, SEARCH_ERROR_FG_COLOR, SEARCH_HIGHLIGHT_BG_COLOR, SEARCH_HIGHLIGHT_FG_COLOR,
     SELECTION_BG_COLOR, SELECTION_FG_COLOR, STATUS_LINE_BG_COLOR, STATUS_LINE_FG_COLOR,
 };
 use crate::selection::*;
@@ -16,8 +16,11 @@ use crossterm::{
 use std::io::{self, Stdout, Write, stdout};
 use unicode_width::UnicodeWidthStr;
 
+const PROMPT_ELIPSIS: &str = "... (truncated)";
+const STATUS_LINE_AVG_LEN: usize = "Ln 123, Col 123".len();
+
 impl ScrollbackBuffer {
-    pub fn draw_status_line(&self) -> io::Result<()> {
+    pub fn draw_status_line(&mut self) -> io::Result<()> {
         let mut out = stdout();
         out.queue(MoveTo(0, self.term_height as u16))?;
         out.queue(SetBackgroundColor(STATUS_LINE_BG_COLOR))?;
@@ -27,27 +30,68 @@ impl ScrollbackBuffer {
         let mut cursor_x = self.get_physical_cursor_x() as u16;
         let mut cursor_y = self.get_physical_cursor_y() as u16;
 
-        if let Some(search) = &self.search {
+        let status_text = format!("Ln {}, Col {}", self.logical_y, self.cursor_x);
+
+        let mut long_search = false;
+        let mut search_line_number = 1;
+        if let Some(search) = &mut self.search {
+            let search_query_width = search.query.width();
+            let long_search_threshold = self.term_width as usize - (status_text.width() * 2);
+            if search_query_width > long_search_threshold {
+                search_line_number = (search_query_width as f64
+                    / self.term_width.saturating_sub(1) as f64)
+                    .ceil() as usize;
+                if search_line_number > (self.term_height as usize / 2) {
+                    search.error = Some("Search query too long to display".to_string());
+                } else {
+                    long_search = true;
+                }
+            }
+
             out.queue(MoveTo(0, self.term_height as u16))?;
             if let Some(error) = &search.error {
                 out.queue(SetForegroundColor(SEARCH_ERROR_FG_COLOR))?;
                 out.queue(Print(error.as_str()))?;
                 out.queue(SetForegroundColor(STATUS_LINE_FG_COLOR))?;
             } else {
+                let mut search_prompt = search.query.as_str();
                 if search.state == SearchState::Typing {
+                    if long_search {
+                        // BUG: when `REAL_TIME_SEARCH = false`, erasing from 2 to 1 lines needs a redraw
+                        cursor_x = (search.query.width() % self.term_width) as u16 + 1;
+                        out.queue(MoveTo(
+                            0,
+                            (self.term_height as u16).saturating_sub(search_line_number as u16),
+                        ))?;
+                    } else {
+                        cursor_x = search.query.width() as u16 + 1;
+                    }
                     cursor_y = self.term_height as u16;
-                    cursor_x = search.query.width() as u16 + 1;
+                } else if long_search {
+                    search_prompt = &search.query[..get_utf_index(
+                        &search.query,
+                        (self.term_width as usize)
+                            .saturating_sub(STATUS_LINE_AVG_LEN * 2 + PROMPT_ELIPSIS.width() + 1),
+                    )];
                 }
-                out.queue(Print(&format!("/{}", search.query)))?;
+                // BUG: when `REAL_TIME_SEARCH = true`, cursor is highjacked and moves
+                // to the last match, which should not happen
+                if search.state != SearchState::Hidden {
+                    out.queue(Print(&format!("/{}", search_prompt)))?;
+                    if long_search && search.state != SearchState::Typing {
+                        out.queue(Print(PROMPT_ELIPSIS))?;
+                    }
+                }
             }
         }
 
-        let status_text = format!("Ln {}, Col {}", self.logical_y, self.cursor_x);
-        out.queue(MoveTo(
-            self.term_width.saturating_sub(status_text.width()) as u16,
-            self.term_height as u16,
-        ))?;
-        out.queue(Print(status_text))?;
+        if !long_search {
+            out.queue(MoveTo(
+                self.term_width.saturating_sub(status_text.width()) as u16,
+                self.term_height as u16,
+            ))?;
+            out.queue(Print(status_text))?;
+        }
 
         out.queue(MoveTo(cursor_x, cursor_y))?;
         out.flush()
@@ -55,7 +99,18 @@ impl ScrollbackBuffer {
 
     pub fn draw(&mut self) -> io::Result<()> {
         let mut out = stdout();
+
+        self.draw_text(&mut out)?;
+        self.draw_selection(&mut out)?;
+        self.draw_status_line()?;
+        self.draw_search(true)?;
+
+        out.flush()
+    }
+
+    pub(crate) fn draw_text(&self, out: &mut Stdout) -> io::Result<()> {
         out.queue(SetBackgroundColor(Color::Reset))?;
+        out.queue(SetForegroundColor(Color::Reset))?;
         out.queue(Clear(ClearType::All))?;
         for (i, line) in self.lines[self.viewport_start..self.viewport_end.saturating_add(1)]
             .iter()
@@ -64,16 +119,7 @@ impl ScrollbackBuffer {
             out.queue(MoveTo(0, i as u16))?;
             out.queue(Print(line))?;
         }
-
-        self.draw_selection(&mut out)?;
-        self.draw_status_line()?;
-        self.draw_search(true)?;
-
-        out.queue(MoveTo(
-            self.get_physical_cursor_x() as u16,
-            self.get_physical_cursor_y() as u16,
-        ))?;
-        out.flush()
+        Ok(())
     }
 
     pub(crate) fn draw_highlight(
@@ -203,7 +249,7 @@ impl ScrollbackBuffer {
         // - Highlighted (already drawn before, force redraw)
         // - Typing (real-time search active)
         if (search.state == SearchState::PendingRedraw
-            || search.state == SearchState::Typing
+            || (search.state == SearchState::Typing && REAL_TIME_SEARCH)
             || (force && search.state == SearchState::Highlighted))
             && search.error.is_none()
             && !search.results.is_empty()
