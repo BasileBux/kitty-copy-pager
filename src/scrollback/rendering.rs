@@ -73,8 +73,6 @@ impl ScrollbackBuffer {
                             .saturating_sub(STATUS_LINE_AVG_LEN * 2 + PROMPT_ELIPSIS.width() + 1),
                     )];
                 }
-                // BUG: when `REAL_TIME_SEARCH = true`, cursor is highjacked and moves
-                // to the last match, which should not happen
                 if search.state != SearchState::Hidden {
                     out.queue(Print(&format!("/{}", search_prompt)))?;
                     if long_search && search.state != SearchState::Typing {

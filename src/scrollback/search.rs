@@ -24,6 +24,7 @@ pub(crate) struct Search {
     pub error: Option<String>,
     pub current_result_index: usize,
     pub long_search: bool,
+    pub last_match_pos: Option<(usize, usize)>, // (column, line) - tracks last jumped-to match
 }
 
 impl ScrollbackBuffer {
@@ -100,6 +101,7 @@ impl ScrollbackBuffer {
                 error: None,
                 current_result_index: 0,
                 long_search: false,
+                last_match_pos: None,
             });
             self.draw_status_line()?;
             return Ok(false);
@@ -216,12 +218,24 @@ impl ScrollbackBuffer {
             if search.error.is_some() || search.results.is_empty() {
                 None
             } else {
-                let next_index = (search.current_result_index + 1) % search.results.len();
-                Some((
-                    search.results[next_index].column_index,
-                    search.results[next_index].line_index,
-                    next_index,
-                ))
+                // Check if cursor is still at the last match we jumped to
+                let at_last_match = search.last_match_pos.map_or(false, |(col, line)| {
+                    col == self.cursor_x && line == self.logical_y
+                });
+
+                if at_last_match {
+                    // We're at the last match, go to next sequential match
+                    let next_index = (search.current_result_index + 1) % search.results.len();
+                    Some((
+                        search.results[next_index].column_index,
+                        search.results[next_index].line_index,
+                        next_index,
+                    ))
+                } else {
+                    // User moved manually, find closest match from current cursor position
+                    self.get_closest_next_match()
+                        .map(|(result, idx)| (result.column_index, result.line_index, idx))
+                }
             }
         } else {
             None
@@ -232,6 +246,7 @@ impl ScrollbackBuffer {
                 if let Some(search) = &mut self.search {
                     search.current_result_index = idx;
                     search.state = SearchState::Highlighted;
+                    search.last_match_pos = Some((col, line));
                 }
                 self.move_to(col, line)?;
             }
@@ -243,6 +258,7 @@ impl ScrollbackBuffer {
                     error: Some("Error: No search query".to_string()),
                     current_result_index: 0,
                     long_search: false,
+                    last_match_pos: None,
                 });
             }
         }
@@ -254,15 +270,27 @@ impl ScrollbackBuffer {
             if search.error.is_some() || search.results.is_empty() {
                 None
             } else {
-                let prev_index = search
-                    .current_result_index
-                    .checked_sub(1)
-                    .unwrap_or(search.results.len() - 1);
-                Some((
-                    search.results[prev_index].column_index,
-                    search.results[prev_index].line_index,
-                    prev_index,
-                ))
+                // Check if cursor is still at the last match we jumped to
+                let at_last_match = search.last_match_pos.map_or(false, |(col, line)| {
+                    col == self.cursor_x && line == self.logical_y
+                });
+
+                if at_last_match {
+                    // We're at the last match, go to previous sequential match
+                    let prev_index = search
+                        .current_result_index
+                        .checked_sub(1)
+                        .unwrap_or(search.results.len() - 1);
+                    Some((
+                        search.results[prev_index].column_index,
+                        search.results[prev_index].line_index,
+                        prev_index,
+                    ))
+                } else {
+                    // User moved manually, find closest match from current cursor position
+                    self.get_closest_prev_match()
+                        .map(|(result, idx)| (result.column_index, result.line_index, idx))
+                }
             }
         } else {
             None
@@ -273,6 +301,7 @@ impl ScrollbackBuffer {
                 if let Some(search) = &mut self.search {
                     search.current_result_index = idx;
                     search.state = SearchState::Highlighted;
+                    search.last_match_pos = Some((col, line));
                 }
                 self.move_to(col, line)?;
             }
@@ -284,6 +313,7 @@ impl ScrollbackBuffer {
                     error: Some("Error: No search query".to_string()),
                     current_result_index: 0,
                     long_search: false,
+                    last_match_pos: None,
                 });
             }
         }
@@ -335,10 +365,14 @@ impl ScrollbackBuffer {
         };
         match closest_match {
             Some((result, idx)) => {
-                self.move_to(result.column_index, result.line_index)?;
+                // Copy values before calling move_to to avoid borrow issues
+                let col = result.column_index;
+                let line = result.line_index;
+                self.move_to(col, line)?;
                 if let Some(search) = &mut self.search {
                     search.current_result_index = idx;
                     search.state = SearchState::Highlighted;
+                    search.last_match_pos = Some((col, line));
                 }
             }
             None => {
@@ -349,6 +383,7 @@ impl ScrollbackBuffer {
                     error: Some("Error: No search results".to_string()),
                     current_result_index: 0,
                     long_search: false,
+                    last_match_pos: None,
                 });
                 self.draw_status_line()?;
             }
