@@ -3,7 +3,6 @@ use super::ScrollbackBuffer;
 use crossterm::event::{KeyCode, KeyEvent};
 use std::io::{self};
 
-use crate::scrollback::SCROLL_JUMP;
 use crate::scrollback::search::SearchState;
 use crate::selection::Selection;
 
@@ -15,8 +14,8 @@ impl ScrollbackBuffer {
             // Simple movement
             KeyCode::Char('j') => self.move_vertically_by(1)?,
             KeyCode::Char('k') => self.move_vertically_by(-1)?,
-            KeyCode::Char('d') => self.move_vertically_by(SCROLL_JUMP as isize)?, // Replaces ctrl+d
-            KeyCode::Char('u') => self.move_vertically_by(-(SCROLL_JUMP as isize))?, // Replaces ctrl+u
+            KeyCode::Char('d') => self.move_vertically_by(self.settings.scroll_jump as isize)?, // Replaces ctrl+d
+            KeyCode::Char('u') => self.move_vertically_by(-(self.settings.scroll_jump as isize))?, // Replaces ctrl+u
             KeyCode::Char('h') => self.move_horizontally_by(-1)?,
             KeyCode::Char('l') => self.move_horizontally_by(1)?,
 

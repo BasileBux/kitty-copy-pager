@@ -1,5 +1,4 @@
 use super::ScrollbackBuffer;
-use super::*;
 use std::cmp::min;
 use std::io::{self};
 
@@ -83,20 +82,20 @@ impl ScrollbackBuffer {
     }
 
     pub(crate) fn move_viewport(&mut self) -> bool {
-        let upper_bound = self.logical_y.saturating_add(SCROLLOFF);
+        let upper_bound = self.logical_y.saturating_add(self.settings.scrolloff);
         if upper_bound > self.viewport_end {
             let mut movement = self.viewport_end;
             self.viewport_end = min(
-                self.logical_y.saturating_add(SCROLLOFF),
+                self.logical_y.saturating_add(self.settings.scrolloff),
                 self.lines.len().saturating_sub(1),
             );
             movement = self.viewport_end - movement;
             self.viewport_start = self.viewport_start.saturating_add(movement);
             return true;
         }
-        if self.logical_y.saturating_sub(SCROLLOFF) < self.viewport_start {
+        if self.logical_y.saturating_sub(self.settings.scrolloff) < self.viewport_start {
             let mut movement = self.viewport_start;
-            self.viewport_start = self.logical_y.saturating_sub(SCROLLOFF);
+            self.viewport_start = self.logical_y.saturating_sub(self.settings.scrolloff);
             movement = movement - self.viewport_start;
             self.viewport_end = self.viewport_end.saturating_sub(movement);
             return true;

@@ -1,7 +1,7 @@
 use crate::scrollback::search::{Search, SearchState};
+use crate::scrollback::settings::Settings;
 use crate::selection::*;
 use crossterm::event::{KeyCode, KeyEvent};
-use crossterm::style::Color;
 use std::collections::VecDeque;
 use std::io::{self, stdin};
 use strip_ansi_escapes::strip;
@@ -12,26 +12,9 @@ mod motions;
 mod movement;
 mod rendering;
 mod search;
+mod settings;
 
-pub(crate) const PROMPT_CURSOR_OFFSET: usize = 1;
-pub(crate) const SCROLLOFF: usize = 4;
-pub(crate) const SCROLL_JUMP: usize = 10;
 pub(crate) const INPUT_BUFFER_SIZE: usize = 4;
-pub(crate) const TAB_WIDTH: usize = 8;
-
-pub(crate) const REAL_TIME_SEARCH: bool = true;
-pub(crate) const SMARTCASE_SEARCH: bool = true;
-
-pub(crate) const STATUS_LINE_BG_COLOR: Color = Color::DarkGrey;
-pub(crate) const STATUS_LINE_FG_COLOR: Color = Color::White;
-
-pub(crate) const SEARCH_ERROR_FG_COLOR: Color = Color::Red;
-
-pub(crate) const SELECTION_BG_COLOR: Color = Color::Yellow;
-pub(crate) const SELECTION_FG_COLOR: Color = Color::Black;
-
-pub(crate) const SEARCH_HIGHLIGHT_BG_COLOR: Color = Color::Blue;
-pub(crate) const SEARCH_HIGHLIGHT_FG_COLOR: Color = Color::Black;
 
 pub struct ScrollbackBuffer {
     pub(crate) lines: Vec<String>,
@@ -46,13 +29,15 @@ pub struct ScrollbackBuffer {
     pub(crate) input_buffer: VecDeque<KeyCode>,
     pub(crate) selection: Option<Selection>, // We'll assume that start is always before end
     pub(crate) search: Option<Search>,
+    pub(crate) settings: Settings,
 }
 
 impl ScrollbackBuffer {
     pub fn new() -> io::Result<Self> {
+        let settings = Settings::new();
         let mut raw_lines = Vec::<String>::new();
         let mut text_lines = Vec::<String>::new();
-        let tab_replacement = String::from(" ").repeat(TAB_WIDTH);
+        let tab_replacement = String::from(" ").repeat(settings.tab_width);
         for line in stdin().lines() {
             let mut line = line?;
             line = line.replace("\t", &tab_replacement);
@@ -74,7 +59,7 @@ impl ScrollbackBuffer {
             .last()
             .map(|l| l.chars().count().saturating_sub(1))
             .unwrap_or(0)
-            + PROMPT_CURSOR_OFFSET;
+            + settings.prompt_cursor_offset;
 
         Ok(Self {
             cursor_x,
@@ -96,6 +81,7 @@ impl ScrollbackBuffer {
             selection: None,
             search: None,
             input_buffer: VecDeque::with_capacity(INPUT_BUFFER_SIZE),
+            settings,
         })
     }
 

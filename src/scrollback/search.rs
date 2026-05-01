@@ -1,4 +1,4 @@
-use super::{REAL_TIME_SEARCH, SMARTCASE_SEARCH, ScrollbackBuffer};
+use super::ScrollbackBuffer;
 use crossterm::event::{KeyCode, KeyEvent};
 use regex::Regex;
 use std::io::{self};
@@ -31,8 +31,8 @@ impl ScrollbackBuffer {
     /// Builds regex pattern with smartcase support.
     /// If SMARTCASE_SEARCH is enabled and query has no uppercase chars,
     /// prepends (?i) for case-insensitive matching.
-    fn build_search_pattern(query: &str) -> String {
-        if SMARTCASE_SEARCH && !query.chars().any(|c| c.is_uppercase()) {
+    fn build_search_pattern(query: &str, smart_case: bool) -> String {
+        if smart_case && !query.chars().any(|c| c.is_uppercase()) {
             format!("(?i){}", query)
         } else {
             query.to_string()
@@ -49,7 +49,7 @@ impl ScrollbackBuffer {
         };
 
         let before_lines = if let Some(search) = &self.search
-            && !REAL_TIME_SEARCH
+            && !self.settings.real_time_search
         {
             get_lines(
                 search.query.width(),
@@ -73,13 +73,13 @@ impl ScrollbackBuffer {
             match event.code {
                 KeyCode::Char(c) => {
                     search.query.push(c);
-                    if REAL_TIME_SEARCH {
+                    if self.settings.real_time_search {
                         self.search_realtime();
                     }
                 }
                 KeyCode::Backspace => {
                     search.query.pop();
-                    if REAL_TIME_SEARCH {
+                    if self.settings.real_time_search {
                         self.search_realtime();
                     }
                 }
@@ -108,7 +108,7 @@ impl ScrollbackBuffer {
         }
 
         let after_lines = if let Some(search) = &self.search
-            && !REAL_TIME_SEARCH
+            && !self.settings.real_time_search
         {
             get_lines(
                 search.query.width(),
@@ -121,7 +121,7 @@ impl ScrollbackBuffer {
 
         let needs_full_redraw = after_lines < before_lines;
 
-        if REAL_TIME_SEARCH || needs_full_redraw {
+        if self.settings.real_time_search || needs_full_redraw {
             self.draw()?;
         } else {
             self.draw_status_line()?;
@@ -141,7 +141,8 @@ impl ScrollbackBuffer {
                     search.state = SearchState::Typing;
                     return;
                 }
-                let pattern = Self::build_search_pattern(&search.query);
+                let pattern =
+                    Self::build_search_pattern(&search.query, self.settings.smartcase_search);
                 match Regex::new(&pattern) {
                     Ok(regex) => {
                         search.results.clear();
@@ -178,7 +179,7 @@ impl ScrollbackBuffer {
                     return;
                 }
 
-                let pattern = Self::build_search_pattern(&search.query);
+                let pattern = Self::build_search_pattern(&search.query, self.settings.smartcase_search);
                 match Regex::new(&pattern) {
                     Ok(regex) => {
                         search.results.clear();

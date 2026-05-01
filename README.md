@@ -50,7 +50,7 @@ the terminal. It will remain functional but might not be the best experience.
 - [x] Handle multi-cell unicode chars
 - [x] Add search functionality `/`
     - [x] Add realtime search highlighting (while typing the search query)
-    - [ ] Add match index in status bar (e.g. `[1/5]`)
+    - [x] Add match index in status bar (e.g. `[1/5]`)
 - [ ] Make initial viewport at the correct position (currently it is always at the bottom)
 - [ ] CLI flags for configuration
 - [ ] Mouse scroll support (no click but only scroll)
