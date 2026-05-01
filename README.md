@@ -7,6 +7,8 @@ This was made as a scollback pager for the [kitty](https://sw.kovidgoyal.net/kit
 terminal. It receives the full scrollback in `stdin` and then renders it and allows
 to move with vim motions and copy text.
 
+On [radicle](radicle.xyz): `rad:zDUezH58HjpjpYumsSMjj7dwKLe3`
+
 ## Features
 
 Vim motions for moving around, visual mode for selecting text, copying to clipboard.
