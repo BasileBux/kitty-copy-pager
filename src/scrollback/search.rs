@@ -29,7 +29,7 @@ pub(crate) struct Search {
 
 impl ScrollbackBuffer {
     /// Builds regex pattern with smartcase support.
-    /// If SMARTCASE_SEARCH is enabled and query has no uppercase chars,
+    /// If settings.smartcase_search is enabled and query has no uppercase chars,
     /// prepends (?i) for case-insensitive matching.
     fn build_search_pattern(query: &str, smart_case: bool) -> String {
         if smart_case && !query.chars().any(|c| c.is_uppercase()) {
@@ -219,13 +219,11 @@ impl ScrollbackBuffer {
             if search.error.is_some() || search.results.is_empty() {
                 None
             } else {
-                // Check if cursor is still at the last match we jumped to
                 let at_last_match = search.last_match_pos.map_or(false, |(col, line)| {
                     col == self.cursor_x && line == self.logical_y
                 });
 
                 if at_last_match {
-                    // We're at the last match, go to next sequential match
                     let next_index = (search.current_result_index + 1) % search.results.len();
                     Some((
                         search.results[next_index].column_index,
@@ -233,7 +231,6 @@ impl ScrollbackBuffer {
                         next_index,
                     ))
                 } else {
-                    // User moved manually, find closest match from current cursor position
                     self.get_closest_next_match()
                         .map(|(result, idx)| (result.column_index, result.line_index, idx))
                 }
@@ -271,13 +268,11 @@ impl ScrollbackBuffer {
             if search.error.is_some() || search.results.is_empty() {
                 None
             } else {
-                // Check if cursor is still at the last match we jumped to
                 let at_last_match = search.last_match_pos.map_or(false, |(col, line)| {
                     col == self.cursor_x && line == self.logical_y
                 });
 
                 if at_last_match {
-                    // We're at the last match, go to previous sequential match
                     let prev_index = search
                         .current_result_index
                         .checked_sub(1)
@@ -288,7 +283,6 @@ impl ScrollbackBuffer {
                         prev_index,
                     ))
                 } else {
-                    // User moved manually, find closest match from current cursor position
                     self.get_closest_prev_match()
                         .map(|(result, idx)| (result.column_index, result.line_index, idx))
                 }
@@ -366,7 +360,6 @@ impl ScrollbackBuffer {
         };
         match closest_match {
             Some((result, idx)) => {
-                // Copy values before calling move_to to avoid borrow issues
                 let col = result.column_index;
                 let line = result.line_index;
                 self.move_to(col, line)?;

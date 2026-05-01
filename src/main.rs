@@ -1,3 +1,4 @@
+use clap::Parser;
 use crossterm::{
     cursor::MoveTo,
     event::{Event, poll, read},
@@ -7,7 +8,8 @@ use crossterm::{
         enable_raw_mode,
     },
 };
-use kitty_copy::scrollback::ScrollbackBuffer;
+use kitty_copy::{scrollback::ScrollbackBuffer};
+use kitty_copy::settings::*;
 use std::io::{self, Write, stdout};
 use std::time::Duration;
 
@@ -19,7 +21,9 @@ const LOGGING_ENABLED: bool = false;
 const INPUT_POLLING_RATE: u64 = 100;
 
 fn main() -> io::Result<()> {
-    let mut sb = ScrollbackBuffer::new()?;
+    let args = Args::parse();
+    let settings = Settings::from_args(args);
+    let mut sb = ScrollbackBuffer::new(settings)?;
 
     if LOGGING_ENABLED {
         WriteLogger::init(

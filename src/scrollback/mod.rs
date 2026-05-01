@@ -1,6 +1,6 @@
 use crate::scrollback::search::{Search, SearchState};
-use crate::scrollback::settings::Settings;
 use crate::selection::*;
+use crate::settings::Settings;
 use crossterm::event::{KeyCode, KeyEvent};
 use std::collections::VecDeque;
 use std::io::{self, stdin};
@@ -12,7 +12,6 @@ mod motions;
 mod movement;
 mod rendering;
 mod search;
-mod settings;
 
 pub(crate) const INPUT_BUFFER_SIZE: usize = 4;
 
@@ -33,8 +32,7 @@ pub struct ScrollbackBuffer {
 }
 
 impl ScrollbackBuffer {
-    pub fn new() -> io::Result<Self> {
-        let settings = Settings::new();
+    pub fn new(mut settings: Settings) -> io::Result<Self> {
         let mut raw_lines = Vec::<String>::new();
         let mut text_lines = Vec::<String>::new();
         let tab_replacement = String::from(" ").repeat(settings.tab_width);
@@ -46,6 +44,7 @@ impl ScrollbackBuffer {
             raw_lines.push(line);
         }
         let (term_width, term_height) = crossterm::terminal::size()?;
+        settings.scroll_jump = term_height as usize / 2;
 
         // The scrollback may contain empty lines at the end
         let mut last_non_empty_line_idx = raw_lines.len().saturating_sub(1);

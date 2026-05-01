@@ -51,8 +51,8 @@ the terminal. It will remain functional but might not be the best experience.
 - [x] Add search functionality `/`
     - [x] Add realtime search highlighting (while typing the search query)
     - [x] Add match index in status bar (e.g. `[1/5]`)
+- [x] CLI flags for configuration
 - [ ] Make initial viewport at the correct position (currently it is always at the bottom)
-- [ ] CLI flags for configuration
 - [ ] Mouse scroll support (no click but only scroll)
 - [ ] Even more advanced movement keys
 - [ ] More advanced selection motions (`vi"`, `va(`, etc...)
