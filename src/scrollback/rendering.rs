@@ -57,7 +57,6 @@ impl ScrollbackBuffer {
                 let mut search_prompt = search.query.as_str();
                 if search.state == SearchState::Typing {
                     if long_search {
-                        // BUG: when `REAL_TIME_SEARCH = false`, erasing from 2 to 1 lines needs a redraw
                         cursor_x = (search.query.width() % self.term_width) as u16 + 1;
                         out.queue(MoveTo(
                             0,
@@ -83,6 +82,7 @@ impl ScrollbackBuffer {
                     }
                 }
             }
+            search.long_search = long_search;
         }
 
         if !long_search {
@@ -102,8 +102,8 @@ impl ScrollbackBuffer {
 
         self.draw_text(&mut out)?;
         self.draw_selection(&mut out)?;
-        self.draw_status_line()?;
         self.draw_search(true)?;
+        self.draw_status_line()?;
 
         out.flush()
     }

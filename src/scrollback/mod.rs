@@ -19,7 +19,7 @@ pub(crate) const SCROLL_JUMP: usize = 10;
 pub(crate) const INPUT_BUFFER_SIZE: usize = 4;
 pub(crate) const TAB_WIDTH: usize = 8;
 
-pub(crate) const REAL_TIME_SEARCH: bool = false;
+pub(crate) const REAL_TIME_SEARCH: bool = true;
 pub(crate) const SMARTCASE_SEARCH: bool = true;
 
 pub(crate) const STATUS_LINE_BG_COLOR: Color = Color::DarkGrey;
