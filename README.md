@@ -17,8 +17,9 @@ Mono-lina regex search with highlighting and navigaion with `n` and `N`. There i
 real-time search which can be disabled with a CLI flag. Also supports smart case
 search which can be disabled with a CLI flag as well.
 
-> [!WARNING] Resizing is not supported. We are working with the raw scrollback
-> which is the exact good size but won't work if terminal window is resized
+> [!WARNING] 
+> Resizing is not supported. We are working with the raw scrollback which is the
+> exact good size but won't work if terminal window is resized.
 
 ## NOTES:
 
