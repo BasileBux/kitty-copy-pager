@@ -8,8 +8,8 @@ use crossterm::{
         enable_raw_mode,
     },
 };
-use kitty_copy::{scrollback::ScrollbackBuffer};
-use kitty_copy::settings::*;
+use kitty_copy_pager::{scrollback::ScrollbackBuffer};
+use kitty_copy_pager::settings::*;
 use std::io::{self, Write, stdout};
 use std::time::Duration;
 
