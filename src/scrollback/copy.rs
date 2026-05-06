@@ -57,7 +57,7 @@ impl ScrollbackBuffer {
                     copy_string.push_str(&line[start..]);
                     copy_string.push_str("\n");
                 } else if i == last_i {
-                    let end = min(get_utf_index(line, sel.end.x), line.len().saturating_sub(2));
+                    let end = min(get_utf_index(line, sel.end.x), line.len().saturating_sub(1));
                     copy_string.push_str(&line[..end + 1]);
                     copy_string.push_str("\n");
                 } else {
