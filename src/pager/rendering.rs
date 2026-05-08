@@ -142,7 +142,6 @@ impl Pager {
         Ok(())
     }
 
-    // TODO: simplify logic a bunch to make more readable and extensible
     pub(crate) fn draw_highlight(
         &self,
         start: &Vec2<usize>,
@@ -155,67 +154,51 @@ impl Pager {
             return Ok(());
         }
 
-        let sel_physical_y_start = start.y as isize - self.viewport_start as isize;
-        let sel_physical_y_end = end.y - self.viewport_start;
-
-        if sel_physical_y_start < 0 {
-            out.queue(MoveTo(0, 0))?;
-        } else {
-            out.queue(MoveTo(start.x as u16, sel_physical_y_start as u16))?;
-        }
-
         out.queue(SetAttribute(Attribute::Reset))?;
         out.queue(SetForegroundColor(*fg_color))?;
         out.queue(SetBackgroundColor(*bg_color))?;
 
+        // Single-line highlight
         if start.y == end.y {
-            if start.y < self.text_lines.len() {
-                let text_line = &self.text_lines[start.y];
-                let start_idx = get_utf_index(text_line, start.x);
-                let end_idx = get_utf_index(text_line, end.x + 1);
-                out.queue(Print(&text_line[start_idx..end_idx]))?;
-            }
-        } else {
-            let y_idx = if sel_physical_y_start < 0 {
-                0usize
-            } else {
-                (sel_physical_y_start as usize).saturating_add(1)
-            };
+            let line = &self.text_lines[start.y];
+            let start_idx = get_utf_index(line, start.x);
+            let end_idx = get_utf_index(line, end.x + 1);
+            let screen_y = (start.y - self.viewport_start) as u16;
+            out.queue(MoveTo(start.x as u16, screen_y))?;
+            out.queue(Print(&line[start_idx..end_idx]))?;
+            out.queue(SetForegroundColor(Color::Reset))?;
+            out.queue(SetBackgroundColor(Color::Reset))?;
+            return Ok(());
+        }
 
-            if sel_physical_y_start >= 0 && start.y < self.text_lines.len() {
-                let text_line = &self.text_lines[start.y];
-                let start_idx = get_utf_index(text_line, start.x);
-                out.queue(Print(&text_line[start_idx..]))?;
-            }
+        // Multi-line highlight
+        let first_visible_y = start.y.max(self.viewport_start);
+        let last_visible_y = end.y.min(self.viewport_end);
 
-            let loop_start = if sel_physical_y_start < 0 {
-                start.y + sel_physical_y_start.wrapping_abs() as usize
-            } else {
-                start.y + 1
-            };
+        // Draw first line (from start.x to end of line)
+        if start.y >= self.viewport_start && start.y < self.text_lines.len() {
+            let line = &self.text_lines[start.y];
+            let start_idx = get_utf_index(line, start.x);
+            let screen_y = (start.y - self.viewport_start) as u16;
+            out.queue(MoveTo(start.x as u16, screen_y))?;
+            out.queue(Print(&line[start_idx..]))?;
+        }
 
-            let loop_end = if sel_physical_y_end < self.term_height {
-                end.y
-            } else {
-                end.y - (sel_physical_y_end - self.term_height)
-            }
-            .min(self.text_lines.len());
+        // Draw full middle lines
+        for line_y in (first_visible_y + 1)..last_visible_y.min(self.text_lines.len()) {
+            let line = &self.text_lines[line_y];
+            let screen_y = (line_y - self.viewport_start) as u16;
+            out.queue(MoveTo(0, screen_y))?;
+            out.queue(Print(if line.is_empty() { " " } else { line }))?;
+        }
 
-            for (i, line) in self.text_lines[loop_start..loop_end].iter().enumerate() {
-                out.queue(MoveTo(0, (y_idx + i) as u16))?;
-                if line.is_empty() {
-                    out.queue(Print(" "))?;
-                } else {
-                    out.queue(Print(line))?;
-                }
-            }
-
-            if sel_physical_y_end < self.term_height && end.y < self.text_lines.len() {
-                let text_line = &self.text_lines[end.y];
-                let end_idx = get_utf_index(text_line, end.x + 1);
-                out.queue(MoveTo(0, sel_physical_y_end as u16))?;
-                out.queue(Print(&text_line[..end_idx]))?;
-            }
+        // Draw last line (from start to end.x)
+        if end.y <= self.viewport_end && end.y < self.text_lines.len() {
+            let line = &self.text_lines[end.y];
+            let end_idx = get_utf_index(line, end.x + 1);
+            let screen_y = (end.y - self.viewport_start) as u16;
+            out.queue(MoveTo(0, screen_y))?;
+            out.queue(Print(&line[..end_idx]))?;
         }
 
         out.queue(SetForegroundColor(Color::Reset))?;
