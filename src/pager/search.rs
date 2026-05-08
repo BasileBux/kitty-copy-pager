@@ -91,43 +91,42 @@ impl Pager {
             1
         };
 
-        if let Some(search) = &mut self.search {
-            if search.state != SearchState::Typing {
-                search.state = SearchState::Typing;
-                search.error = None;
-                search.results.clear();
-                search.query.clear();
-                self.draw_status_line()?;
-                return Ok(false);
-            }
-
-            match event.code {
-                KeyCode::Char(c) => {
-                    search.query.push(c);
-                    if self.settings.real_time_search {
-                        self.search_realtime();
-                    }
-                }
-                KeyCode::Backspace => {
-                    search.query.pop();
-                    if self.settings.real_time_search {
-                        self.search_realtime();
-                    }
-                }
-                KeyCode::Esc => {
-                    search.state = SearchState::Hidden;
-                    self.draw()?;
-                    return Ok(false);
-                }
-                KeyCode::Enter => {
-                    return Ok(true);
-                }
-                _ => {}
-            }
-        } else {
+        let Some(search) = &mut self.search else {
             self.search = Some(Search::new(SearchState::Typing));
             self.draw_status_line()?;
             return Ok(false);
+        };
+        if search.state != SearchState::Typing {
+            search.state = SearchState::Typing;
+            search.error = None;
+            search.results.clear();
+            search.query.clear();
+            self.draw_status_line()?;
+            return Ok(false);
+        }
+
+        match event.code {
+            KeyCode::Char(c) => {
+                search.query.push(c);
+                if self.settings.real_time_search {
+                    self.search_realtime();
+                }
+            }
+            KeyCode::Backspace => {
+                search.query.pop();
+                if self.settings.real_time_search {
+                    self.search_realtime();
+                }
+            }
+            KeyCode::Esc => {
+                search.state = SearchState::Hidden;
+                self.draw()?;
+                return Ok(false);
+            }
+            KeyCode::Enter => {
+                return Ok(true);
+            }
+            _ => {}
         }
 
         let after_lines = if let Some(search) = &self.search
@@ -156,82 +155,77 @@ impl Pager {
     /// Silently ignores regex errors (for incomplete patterns) and clears results instead.
     /// Note: Keeps state as Typing to stay in search mode.
     pub(crate) fn search_realtime(&mut self) {
-        match &mut self.search {
-            Some(search) => {
-                search.error = None;
-                if search.query.is_empty() {
-                    search.results.clear();
-                    search.state = SearchState::Typing;
-                    return;
-                }
-                let pattern =
-                    Self::build_search_pattern(&search.query, self.settings.smartcase_search);
-                match Regex::new(&pattern) {
-                    Ok(regex) => {
-                        search.results.clear();
+        let Some(search) = &mut self.search else {
+            return;
+        };
 
-                        for (line_index, line) in self.text_lines.iter().enumerate() {
-                            for mat in regex.find_iter(line) {
-                                let column_index = line[..mat.start()].chars().count();
-                                search.results.push(SearchResult {
-                                    line_index,
-                                    column_index,
-                                });
-                            }
-                        }
-                        search.state = SearchState::Typing;
-                    }
-                    Err(_) => {
-                        search.results.clear();
-                        search.state = SearchState::Typing;
+        search.error = None;
+        if search.query.is_empty() {
+            search.results.clear();
+            search.state = SearchState::Typing;
+            return;
+        }
+        let pattern = Self::build_search_pattern(&search.query, self.settings.smartcase_search);
+        match Regex::new(&pattern) {
+            Ok(regex) => {
+                search.results.clear();
+
+                for (line_index, line) in self.text_lines.iter().enumerate() {
+                    for mat in regex.find_iter(line) {
+                        let column_index = line[..mat.start()].chars().count();
+                        search.results.push(SearchResult {
+                            line_index,
+                            column_index,
+                        });
                     }
                 }
+                search.state = SearchState::Typing;
             }
-            _ => return,
+            Err(_) => {
+                search.results.clear();
+                search.state = SearchState::Typing;
+            }
         }
     }
 
     pub(crate) fn search(&mut self) {
-        match &mut self.search {
-            Some(search) => {
-                search.state = SearchState::Hidden;
-                if search.query.is_empty() {
-                    search.set_error("Error: empty search query");
+        let Some(search) = &mut self.search else {
+            return;
+        };
+
+        search.state = SearchState::Hidden;
+        if search.query.is_empty() {
+            search.set_error("Error: empty search query");
+            return;
+        }
+
+        let pattern = Self::build_search_pattern(&search.query, self.settings.smartcase_search);
+        match Regex::new(&pattern) {
+            Ok(regex) => {
+                search.results.clear();
+
+                for (line_index, line) in self.text_lines.iter().enumerate() {
+                    for mat in regex.find_iter(line) {
+                        let column_index = line[..mat.start()].chars().count();
+                        search.results.push(SearchResult {
+                            line_index,
+                            column_index,
+                        });
+                    }
+                }
+                if search.results.is_empty() {
+                    search.results.clear();
+                    search.state = SearchState::Hidden;
+                    search.error = Some("Error: could not find any occurrences".to_string());
                     return;
                 }
-
-                let pattern =
-                    Self::build_search_pattern(&search.query, self.settings.smartcase_search);
-                match Regex::new(&pattern) {
-                    Ok(regex) => {
-                        search.results.clear();
-
-                        for (line_index, line) in self.text_lines.iter().enumerate() {
-                            for mat in regex.find_iter(line) {
-                                let column_index = line[..mat.start()].chars().count();
-                                search.results.push(SearchResult {
-                                    line_index,
-                                    column_index,
-                                });
-                            }
-                        }
-                        if search.results.is_empty() {
-                            search.results.clear();
-                            search.state = SearchState::Hidden;
-                            search.error =
-                                Some("Error: could not find any occurrences".to_string());
-                            return;
-                        }
-                    }
-                    Err(_) => {
-                        search.set_error("Error: invalid regex pattern");
-                        return;
-                    }
-                }
-                search.state = SearchState::PendingRedraw;
             }
-            _ => return,
+            Err(_) => {
+                search.set_error("Error: invalid regex pattern");
+                return;
+            }
         }
+        search.state = SearchState::PendingRedraw;
     }
 
     pub(crate) fn move_to_next_match(&mut self) -> io::Result<()> {
