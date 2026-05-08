@@ -21,6 +21,18 @@ search which can be disabled with a CLI flag as well.
 > Resizing is not supported. We are working with the raw scrollback which is the
 > exact good size but won't work if terminal window is resized.
 
+## Installation
+
+I don't do packaging or releases. If you want to use it, you will need to build
+it from source. Just [install rust stuff](https://rust-lang.org/tools/install/)
+and run `cargo build --release` and you will get your binary.
+
+If using *Nix*, you can just run:
+```bash
+nix run github:basilebux/kitty-copy-pager
+```
+or install it in your flake like any other flake package.
+
 ## NOTES:
 
 The clipboard copy uses [crossterm::clipboard](https://docs.rs/crossterm/latest/crossterm/clipboard/struct.CopyToClipboard.html)
