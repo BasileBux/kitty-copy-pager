@@ -1,4 +1,4 @@
-use super::ScrollbackBuffer;
+use super::Pager;
 use crossterm::event::{KeyCode, KeyEvent};
 use regex::Regex;
 use std::io::{self};
@@ -27,7 +27,38 @@ pub(crate) struct Search {
     pub last_match_pos: Option<(usize, usize)>, // (column, line) - tracks last jumped-to match
 }
 
-impl ScrollbackBuffer {
+impl Search {
+    pub fn new(state: SearchState) -> Self {
+        Search {
+            query: String::new(),
+            state,
+            results: Vec::new(),
+            error: None,
+            current_result_index: 0,
+            long_search: false,
+            last_match_pos: None,
+        }
+    }
+    pub fn new_with_err(msg: &str) -> Self {
+        Search {
+            query: String::new(),
+            state: SearchState::Hidden,
+            results: Vec::new(),
+            error: Some(msg.to_string()),
+            current_result_index: 0,
+            long_search: false,
+            last_match_pos: None,
+        }
+    }
+
+    pub fn set_error(&mut self, msg: &str) {
+        self.results.clear();
+        self.state = SearchState::Hidden;
+        self.error = Some(msg.to_string());
+    }
+}
+
+impl Pager {
     /// Builds regex pattern with smartcase support.
     /// If settings.smartcase_search is enabled and query has no uppercase chars,
     /// prepends (?i) for case-insensitive matching.
@@ -94,15 +125,7 @@ impl ScrollbackBuffer {
                 _ => {}
             }
         } else {
-            self.search = Some(Search {
-                query: String::new(),
-                state: SearchState::Typing,
-                results: Vec::new(),
-                error: None,
-                current_result_index: 0,
-                long_search: false,
-                last_match_pos: None,
-            });
+            self.search = Some(Search::new(SearchState::Typing));
             self.draw_status_line()?;
             return Ok(false);
         }
@@ -173,13 +196,12 @@ impl ScrollbackBuffer {
             Some(search) => {
                 search.state = SearchState::Hidden;
                 if search.query.is_empty() {
-                    search.results.clear();
-                    search.state = SearchState::Hidden;
-                    search.error = Some("Error: empty search query".to_string());
+                    search.set_error("Error: empty search query");
                     return;
                 }
 
-                let pattern = Self::build_search_pattern(&search.query, self.settings.smartcase_search);
+                let pattern =
+                    Self::build_search_pattern(&search.query, self.settings.smartcase_search);
                 match Regex::new(&pattern) {
                     Ok(regex) => {
                         search.results.clear();
@@ -202,9 +224,7 @@ impl ScrollbackBuffer {
                         }
                     }
                     Err(_) => {
-                        search.results.clear();
-                        search.state = SearchState::Hidden;
-                        search.error = Some("Error: Invalid regex pattern".to_string());
+                        search.set_error("Error: invalid regex pattern");
                         return;
                     }
                 }
@@ -249,15 +269,7 @@ impl ScrollbackBuffer {
                 self.move_to(col, line)?;
             }
             None => {
-                self.search = Some(Search {
-                    query: String::new(),
-                    state: SearchState::Hidden,
-                    results: Vec::new(),
-                    error: Some("Error: No search query".to_string()),
-                    current_result_index: 0,
-                    long_search: false,
-                    last_match_pos: None,
-                });
+                self.search = Some(Search::new_with_err("Error: No search query"));
             }
         }
         Ok(())
@@ -301,15 +313,7 @@ impl ScrollbackBuffer {
                 self.move_to(col, line)?;
             }
             None => {
-                self.search = Some(Search {
-                    query: String::new(),
-                    state: SearchState::Hidden,
-                    results: Vec::new(),
-                    error: Some("Error: No search query".to_string()),
-                    current_result_index: 0,
-                    long_search: false,
-                    last_match_pos: None,
-                });
+                self.search = Some(Search::new_with_err("Error: No search query"));
             }
         }
         Ok(())
@@ -370,15 +374,7 @@ impl ScrollbackBuffer {
                 }
             }
             None => {
-                self.search = Some(Search {
-                    query: String::new(),
-                    state: SearchState::Hidden,
-                    results: Vec::new(),
-                    error: Some("Error: No search results".to_string()),
-                    current_result_index: 0,
-                    long_search: false,
-                    last_match_pos: None,
-                });
+                self.search = Some(Search::new_with_err("Error: No search query"));
                 self.draw_status_line()?;
             }
         }

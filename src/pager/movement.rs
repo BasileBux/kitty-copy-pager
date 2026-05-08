@@ -1,10 +1,10 @@
-use super::ScrollbackBuffer;
+use super::Pager;
 use std::cmp::min;
 use std::io::{self};
 
-type WrappingMotionFn = fn(&mut ScrollbackBuffer, bool, bool) -> io::Result<()>;
+type WrappingMotionFn = fn(&mut Pager, bool, bool) -> io::Result<()>;
 
-impl ScrollbackBuffer {
+impl Pager {
     pub(crate) fn move_to(&mut self, x: usize, y: usize) -> io::Result<()> {
         self.logical_y = min(y, self.lines.len().saturating_sub(1));
         let line_len = self.current_line_len();

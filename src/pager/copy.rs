@@ -1,4 +1,4 @@
-use super::ScrollbackBuffer;
+use super::Pager;
 
 use crate::selection::*;
 use crate::utils::get_utf_index;
@@ -6,7 +6,7 @@ use crossterm::{clipboard::CopyToClipboard, execute};
 use std::cmp::min;
 use std::io::{self, Write, stdout};
 
-impl ScrollbackBuffer {
+impl Pager {
     pub(crate) fn expand_selection(&mut self) {
         let y = self.logical_y;
         if let Some(sel) = &mut self.selection {

@@ -1,12 +1,12 @@
-use super::ScrollbackBuffer;
+use super::Pager;
 
 use crossterm::event::{KeyCode, KeyEvent};
 use std::io::{self};
 
-use crate::scrollback::search::SearchState;
+use crate::pager::search::SearchState;
 use crate::selection::Selection;
 
-impl ScrollbackBuffer {
+impl Pager {
     pub(crate) fn normal_mode(&mut self, event: KeyEvent) -> io::Result<bool> {
         match event.code {
             KeyCode::Char('q') => return Ok(true),

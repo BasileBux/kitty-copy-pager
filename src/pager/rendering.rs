@@ -1,6 +1,6 @@
-use super::ScrollbackBuffer;
+use super::Pager;
 
-use crate::scrollback::search::SearchState;
+use crate::pager::search::SearchState;
 use crate::selection::*;
 use crate::utils::get_utf_index;
 use crossterm::{
@@ -15,7 +15,8 @@ use unicode_width::UnicodeWidthStr;
 const PROMPT_ELIPSIS: &str = "... (truncated)";
 const STATUS_LINE_AVG_LEN: usize = "Ln 123, Col 123".len();
 
-impl ScrollbackBuffer {
+impl Pager {
+    // TODO: simplify logic a lot, it's really convoluted and abstract at the moment.
     pub fn draw_status_line(&mut self) -> io::Result<()> {
         let mut out = stdout();
         out.queue(MoveTo(0, self.term_height as u16))?;
@@ -143,6 +144,7 @@ impl ScrollbackBuffer {
         Ok(())
     }
 
+    // TODO: simplify logic a bunch to make more readable and extensible
     pub(crate) fn draw_highlight(
         &self,
         start: &Vec2<usize>,

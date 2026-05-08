@@ -8,7 +8,7 @@ use crossterm::{
         enable_raw_mode,
     },
 };
-use kitty_copy_pager::{scrollback::ScrollbackBuffer};
+use kitty_copy_pager::{pager::Pager};
 use kitty_copy_pager::settings::*;
 use std::io::{self, Write, stdout};
 use std::time::Duration;
@@ -16,14 +16,14 @@ use std::time::Duration;
 use log::*;
 use simplelog::*;
 
-const LOGGING_ENABLED: bool = false;
+const LOGGING_ENABLED: bool = true;
 
 const INPUT_POLLING_RATE: u64 = 100;
 
 fn main() -> io::Result<()> {
     let args = Args::parse();
     let settings = Settings::from_args(args);
-    let mut sb = ScrollbackBuffer::new(settings)?;
+    let mut sb = Pager::new(settings)?;
 
     if LOGGING_ENABLED {
         WriteLogger::init(

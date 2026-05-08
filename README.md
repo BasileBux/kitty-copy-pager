@@ -1,10 +1,10 @@
-# Kitty scrollback copy mode
+# Kitty pager copy mode
 
 I love [tmux](https://github.com/tmux/tmux)'s copy mode but I don't want to use it
 as it is way too overkill for what I do so I rewrote something similar.
 
-This was made as a scollback pager for the [kitty](https://sw.kovidgoyal.net/kitty/)
-terminal. It receives the full scrollback in `stdin` and then renders it and allows
+This was made as a pager for the [kitty](https://sw.kovidgoyal.net/kitty/)
+terminal. It receives the full scrollback content in `stdin` and then renders it and allows
 to move with vim motions and copy text.
 
 On [radicle](https://radicle.dev): `rad:zDUezH58HjpjpYumsSMjj7dwKLe3`

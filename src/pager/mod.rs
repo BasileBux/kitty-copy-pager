@@ -1,4 +1,4 @@
-use crate::scrollback::search::{Search, SearchState};
+use crate::pager::search::{Search, SearchState};
 use crate::selection::*;
 use crate::settings::Settings;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -15,7 +15,7 @@ mod search;
 
 pub(crate) const INPUT_BUFFER_SIZE: usize = 4;
 
-pub struct ScrollbackBuffer {
+pub struct Pager {
     pub(crate) lines: Vec<String>,
     pub(crate) text_lines: Vec<String>, // Lines without escape sequences
     pub(crate) cursor_x: usize,         // This is both the physical and logical position
@@ -31,7 +31,7 @@ pub struct ScrollbackBuffer {
     pub(crate) settings: Settings,
 }
 
-impl ScrollbackBuffer {
+impl Pager {
     pub fn new(mut settings: Settings) -> io::Result<Self> {
         let mut raw_lines = Vec::<String>::new();
         let mut text_lines = Vec::<String>::new();
@@ -46,7 +46,7 @@ impl ScrollbackBuffer {
         let (term_width, term_height) = crossterm::terminal::size()?;
         settings.scroll_jump = term_height as usize / 2;
 
-        // The scrollback may contain empty lines at the end
+        // The pager may contain empty lines at the end
         let mut last_non_empty_line_idx = raw_lines.len().saturating_sub(1);
         while last_non_empty_line_idx > 0 && raw_lines[last_non_empty_line_idx].is_empty() {
             last_non_empty_line_idx -= 1;
