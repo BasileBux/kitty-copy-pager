@@ -13,7 +13,7 @@ On [radicle](https://radicle.dev): `rad:zDUezH58HjpjpYumsSMjj7dwKLe3`
 
 Vim motions for moving around, visual mode for selecting text, copying to clipboard.
 
-Mono-lina regex search with highlighting and navigaion with `n` and `N`. There is
+Mono-line regex search with highlighting and navigaion with `n` and `N`. There is
 real-time search which can be disabled with a CLI flag. Also supports smart case
 search which can be disabled with a CLI flag as well.
 
