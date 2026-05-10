@@ -1,4 +1,6 @@
 use clap::Parser;
+#[cfg(feature = "dhat-heap")]
+use dhat;
 use crossterm::{
     cursor::MoveTo,
     event::{Event, poll, read},
@@ -20,7 +22,13 @@ const LOGGING_ENABLED: bool = false;
 
 const INPUT_POLLING_RATE: u64 = 100;
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 fn main() -> io::Result<()> {
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
     let args = Args::parse();
     let settings = Settings::from_args(args);
     let mut sb = Pager::new(settings)?;

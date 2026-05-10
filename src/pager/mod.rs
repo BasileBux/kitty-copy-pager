@@ -54,8 +54,15 @@ impl Pager {
         let tab_replacement = String::from(" ").repeat(settings.tab_width);
         for line in stdin().lines() {
             let mut line = line?;
-            line = line.replace("\t", &tab_replacement);
-            let stripped = String::from_utf8_lossy(&strip(line.as_bytes())).into_owned();
+            if line.contains('\t') {
+                line = line.replace('\t', &tab_replacement);
+            }
+            let stripped_bytes = strip(line.as_bytes());
+            let stripped = if stripped_bytes.len() == line.len() && stripped_bytes == line.as_bytes() {
+                line.clone()
+            } else {
+                String::from_utf8_lossy(&stripped_bytes).into_owned()
+            };
             text_lines.push(stripped);
             raw_lines.push(line);
         }
