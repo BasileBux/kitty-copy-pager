@@ -15,10 +15,64 @@ mod search;
 
 pub(crate) const INPUT_BUFFER_SIZE: usize = 4;
 
+/// Represents a line of text, optimized for memory when no ANSI codes are present.
+/// When a line contains ANSI escape codes, we store both the raw version (for copying)
+/// and the stripped version (for display and logic).
+/// When a line has no ANSI codes, we only store one String.
+#[derive(Clone)]
+pub enum Line {
+    /// Line without ANSI escape codes - display and raw are the same
+    Clean(String),
+    /// Line with ANSI escape codes - need to store both
+    Ansi { raw: String, stripped: String },
+}
+
+impl Line {
+    /// Returns the display/stripped version of the line (without ANSI codes).
+    /// This is used for rendering, cursor positioning, and search.
+    pub fn display(&self) -> &str {
+        match self {
+            Line::Clean(s) => s,
+            Line::Ansi { stripped, .. } => stripped,
+        }
+    }
+
+    /// Returns the raw version of the line (with ANSI codes intact).
+    /// This is used when copying text to preserve formatting.
+    pub fn raw(&self) -> &str {
+        match self {
+            Line::Clean(s) => s,
+            Line::Ansi { raw, .. } => raw,
+        }
+    }
+
+    /// Returns the length of the display/stripped version.
+    pub fn len(&self) -> usize {
+        self.display().len()
+    }
+
+    /// Returns true if the display/stripped version is empty.
+    pub fn is_empty(&self) -> bool {
+        self.display().is_empty()
+    }
+
+    /// Creates a new Line from raw text, automatically detecting ANSI codes.
+    pub fn new(raw: String) -> Self {
+        let stripped_bytes = strip(raw.as_bytes());
+        if stripped_bytes.len() == raw.len() && stripped_bytes == raw.as_bytes() {
+            // No ANSI codes found, no stripping occurred
+            Line::Clean(raw)
+        } else {
+            // ANSI codes were stripped, store both versions
+            let stripped = String::from_utf8_lossy(&stripped_bytes).into_owned();
+            Line::Ansi { raw, stripped }
+        }
+    }
+}
+
 pub struct Pager {
-    pub(crate) lines: Vec<String>,
-    pub(crate) text_lines: Vec<String>, // Lines without escape sequences
-    pub(crate) cursor_x: usize,         // This is both the physical and logical position
+    pub(crate) lines: Vec<Line>,
+    pub(crate) cursor_x: usize, // This is both the physical and logical position
     pub(crate) wish_cursor_x: usize,
     pub(crate) logical_y: usize,
     pub(crate) term_height: usize,
@@ -45,49 +99,42 @@ pub struct Pager {
 // render the pager as normal and not worry about the edge case at all.
 // Maybe if I am feeling crazy (cray-cray) I can implement a cli flag to have
 // the status line at the bottom or top of the terminal. Would suck to implement but
-// really nice to have IMO. 
+// really nice to have IMO.
 
 impl Pager {
     pub fn new(mut settings: Settings) -> io::Result<Self> {
-        let mut raw_lines = Vec::<String>::new();
-        let mut text_lines = Vec::<String>::new();
+        let mut lines = Vec::<Line>::new();
         let tab_replacement = String::from(" ").repeat(settings.tab_width);
         for line in stdin().lines() {
             let mut line = line?;
+            // Only allocate new string if there are actual tabs
             if line.contains('\t') {
                 line = line.replace('\t', &tab_replacement);
             }
-            let stripped_bytes = strip(line.as_bytes());
-            let stripped = if stripped_bytes.len() == line.len() && stripped_bytes == line.as_bytes() {
-                line.clone()
-            } else {
-                String::from_utf8_lossy(&stripped_bytes).into_owned()
-            };
-            text_lines.push(stripped);
-            raw_lines.push(line);
+            // Create Line - will automatically detect ANSI and choose appropriate variant
+            lines.push(Line::new(line));
         }
         let (term_width, term_height) = crossterm::terminal::size()?;
         settings.scroll_jump = term_height as usize / 2;
 
         // The pager may contain empty lines at the end
-        let mut last_non_empty_line_idx = raw_lines.len().saturating_sub(1);
+        let mut last_non_empty_line_idx = lines.len().saturating_sub(1);
         let mut y_offset = 0;
-        while last_non_empty_line_idx > 0 && raw_lines[last_non_empty_line_idx].is_empty() {
+        while last_non_empty_line_idx > 0 && lines[last_non_empty_line_idx].display().is_empty() {
             last_non_empty_line_idx -= 1;
             y_offset += 1;
         }
-        raw_lines.truncate(last_non_empty_line_idx + 1);
-        text_lines.truncate(last_non_empty_line_idx + 1);
+        lines.truncate(last_non_empty_line_idx + 1);
 
-        let cursor_x = text_lines
+        let cursor_x = lines
             .last()
-            .map(|l| l.chars().count().saturating_sub(1))
+            .map(|l| l.display().chars().count().saturating_sub(1))
             .unwrap_or(0)
             + settings.prompt_cursor_offset;
 
         Ok(Self {
             cursor_x,
-            logical_y: raw_lines.len().saturating_sub(1),
+            logical_y: lines.len().saturating_sub(1),
 
             y_offset,
 
@@ -96,13 +143,12 @@ impl Pager {
             term_height: term_height as usize,
             term_width: term_width as usize,
 
-            viewport_start: raw_lines
+            viewport_start: lines
                 .len()
                 .saturating_sub((term_height as usize).saturating_sub(1)),
-            viewport_end: raw_lines.len().saturating_sub(1),
+            viewport_end: lines.len().saturating_sub(1),
 
-            lines: raw_lines,
-            text_lines,
+            lines,
 
             selection: None,
             search: None,
@@ -132,12 +178,12 @@ impl Pager {
         }
     }
 
-    /// Gets the current text_line
+    /// Gets the current line (display/stripped version)
     fn current_line(&self) -> &str {
-        &self.text_lines[self.logical_y]
+        self.lines[self.logical_y].display()
     }
 
-    /// Gets the current text_line
+    /// Gets the current line length (display/stripped version)
     /// Warning: gets the utf-8 length
     fn current_line_len(&self) -> usize {
         self.current_line().chars().count()

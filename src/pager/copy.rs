@@ -38,7 +38,7 @@ impl Pager {
         };
         let mut copy_string = String::new();
         if sel.start == sel.end {
-            let line = &self.text_lines[sel.start.y];
+            let line = self.lines[sel.start.y].display();
             let char_index = get_utf_index(line, sel.start.x);
             let next_char_index = get_utf_index(line, sel.start.x + 1);
             copy_string.push_str(&line[char_index..next_char_index]);
@@ -47,24 +47,26 @@ impl Pager {
             out.flush()?;
             return Ok(());
         }
-        let end_y = sel.end.y.min(self.text_lines.len().saturating_sub(1));
+        let end_y = sel.end.y.min(self.lines.len().saturating_sub(1));
         let last_i = end_y - sel.start.y;
 
-        for (i, line) in self.text_lines[sel.start.y..=end_y].iter().enumerate() {
+        for (i, line) in self.lines[sel.start.y..=end_y].iter().enumerate() {
+            // Use raw() to preserve ANSI codes when copying
+            let raw_line = line.raw();
             if i == 0 && i == last_i {
-                let start = get_utf_index(line, sel.start.x);
-                let end = min(get_utf_index(line, sel.end.x), line.len().saturating_sub(1));
-                copy_string.push_str(&line[start..end + 1]);
+                let start = get_utf_index(raw_line, sel.start.x);
+                let end = min(get_utf_index(raw_line, sel.end.x), raw_line.len().saturating_sub(1));
+                copy_string.push_str(&raw_line[start..end + 1]);
             } else if i == 0 {
-                let start = get_utf_index(line, sel.start.x);
-                copy_string.push_str(&line[start..]);
+                let start = get_utf_index(raw_line, sel.start.x);
+                copy_string.push_str(&raw_line[start..]);
                 copy_string.push_str("\n");
             } else if i == last_i {
-                let end = min(get_utf_index(line, sel.end.x), line.len().saturating_sub(1));
-                copy_string.push_str(&line[..end + 1]);
+                let end = min(get_utf_index(raw_line, sel.end.x), raw_line.len().saturating_sub(1));
+                copy_string.push_str(&raw_line[..end + 1]);
                 copy_string.push_str("\n");
             } else {
-                copy_string.push_str(line);
+                copy_string.push_str(raw_line);
                 copy_string.push_str("\n");
             }
         }

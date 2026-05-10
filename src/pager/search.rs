@@ -170,9 +170,10 @@ impl Pager {
             Ok(regex) => {
                 search.results.clear();
 
-                for (line_index, line) in self.text_lines.iter().enumerate() {
-                    for mat in regex.find_iter(line) {
-                        let column_index = line[..mat.start()].chars().count();
+                for (line_index, line) in self.lines.iter().enumerate() {
+                    let display = line.display();
+                    for mat in regex.find_iter(display) {
+                        let column_index = display[..mat.start()].chars().count();
                         search.results.push(SearchResult {
                             line_index,
                             column_index,
@@ -204,9 +205,10 @@ impl Pager {
             Ok(regex) => {
                 search.results.clear();
 
-                for (line_index, line) in self.text_lines.iter().enumerate() {
-                    for mat in regex.find_iter(line) {
-                        let column_index = line[..mat.start()].chars().count();
+                for (line_index, line) in self.lines.iter().enumerate() {
+                    let display = line.display();
+                    for mat in regex.find_iter(display) {
+                        let column_index = display[..mat.start()].chars().count();
                         search.results.push(SearchResult {
                             line_index,
                             column_index,

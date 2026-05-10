@@ -95,7 +95,7 @@ impl Pager {
         };
 
         out.queue(MoveTo(0, status_line_y))?;
-        out.queue(Print(format!("/{}", prompt)))?;
+        out.queue(Print(format!("/ {}", prompt)))?;
         if is_long && search.state != SearchState::Typing {
             out.queue(Print(PROMPT_ELIPSIS))?;
         }
@@ -137,7 +137,8 @@ impl Pager {
             .enumerate()
         {
             out.queue(MoveTo(0, i as u16))?;
-            out.queue(Print(line))?;
+            // Use raw() for rendering to preserve ANSI formatting in the display
+            out.queue(Print(line.raw()))?;
         }
         Ok(())
     }
@@ -160,7 +161,7 @@ impl Pager {
 
         // Single-line highlight
         if start.y == end.y {
-            let line = &self.text_lines[start.y];
+            let line = self.lines[start.y].display();
             let start_idx = get_utf_index(line, start.x);
             let end_idx = get_utf_index(line, end.x + 1);
             let screen_y = (start.y - self.viewport_start) as u16;
@@ -176,8 +177,8 @@ impl Pager {
         let last_visible_y = end.y.min(self.viewport_end);
 
         // Draw first line (from start.x to end of line)
-        if start.y >= self.viewport_start && start.y < self.text_lines.len() {
-            let line = &self.text_lines[start.y];
+        if start.y >= self.viewport_start && start.y < self.lines.len() {
+            let line = self.lines[start.y].display();
             let start_idx = get_utf_index(line, start.x);
             let screen_y = (start.y - self.viewport_start) as u16;
             out.queue(MoveTo(start.x as u16, screen_y))?;
@@ -185,16 +186,16 @@ impl Pager {
         }
 
         // Draw full middle lines
-        for line_y in (first_visible_y + 1)..last_visible_y.min(self.text_lines.len()) {
-            let line = &self.text_lines[line_y];
+        for line_y in (first_visible_y + 1)..last_visible_y.min(self.lines.len()) {
+            let line = self.lines[line_y].display();
             let screen_y = (line_y - self.viewport_start) as u16;
             out.queue(MoveTo(0, screen_y))?;
             out.queue(Print(if line.is_empty() { " " } else { line }))?;
         }
 
         // Draw last line (from start to end.x)
-        if end.y <= self.viewport_end && end.y < self.text_lines.len() {
-            let line = &self.text_lines[end.y];
+        if end.y <= self.viewport_end && end.y < self.lines.len() {
+            let line = self.lines[end.y].display();
             let end_idx = get_utf_index(line, end.x + 1);
             let screen_y = (end.y - self.viewport_start) as u16;
             out.queue(MoveTo(0, screen_y))?;
