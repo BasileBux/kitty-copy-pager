@@ -29,7 +29,23 @@ pub struct Pager {
     pub(crate) selection: Option<Selection>, // We'll assume that start is always before end
     pub(crate) search: Option<Search>,
     pub(crate) settings: Settings,
+    pub(crate) y_offset: usize, // Number of empty lines at the end of the file
 }
+
+// NOTE: Idea to implement the y_offset: Make the viewport support the fact that
+// it spans beyond lines.len() - 1. viewport_end can be at most lines.len() - 1 + y_offset.
+// When viewport_end is greater than lines.len() - 1, we cannot scroll down but only
+// up. The rendering should take into account that it cannot use lines[viewport_end].
+// However, we still have an offset of 1 compared to the normal rendering because
+// the status line is always rendered at the bottom of the terminal. Plans are
+// to move the status line to the top of the terminal, which means we will overlay
+// it and only have to worry about the edge case where the pager is 1 line long
+// in which (weird) case, we will shift it all down by 1 line and render the status
+// line at the top as normal. Else, with the status line at the top, we can just
+// render the pager as normal and not worry about the edge case at all.
+// Maybe if I am feeling crazy (cray-cray) I can implement a cli flag to have
+// the status line at the bottom or top of the terminal. Would suck to implement but
+// really nice to have IMO. 
 
 impl Pager {
     pub fn new(mut settings: Settings) -> io::Result<Self> {
@@ -48,8 +64,10 @@ impl Pager {
 
         // The pager may contain empty lines at the end
         let mut last_non_empty_line_idx = raw_lines.len().saturating_sub(1);
+        let mut y_offset = 0;
         while last_non_empty_line_idx > 0 && raw_lines[last_non_empty_line_idx].is_empty() {
             last_non_empty_line_idx -= 1;
+            y_offset += 1;
         }
         raw_lines.truncate(last_non_empty_line_idx + 1);
         text_lines.truncate(last_non_empty_line_idx + 1);
@@ -63,6 +81,8 @@ impl Pager {
         Ok(Self {
             cursor_x,
             logical_y: raw_lines.len().saturating_sub(1),
+
+            y_offset,
 
             wish_cursor_x: cursor_x,
 
