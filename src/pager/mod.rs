@@ -107,7 +107,6 @@ impl Pager {
         let tab_replacement = String::from(" ").repeat(settings.tab_width);
         for line in stdin().lines() {
             let mut line = line?;
-            // Only allocate new string if there are actual tabs
             if line.contains('\t') {
                 line = line.replace('\t', &tab_replacement);
             }

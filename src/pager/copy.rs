@@ -51,8 +51,7 @@ impl Pager {
         let last_i = end_y - sel.start.y;
 
         for (i, line) in self.lines[sel.start.y..=end_y].iter().enumerate() {
-            // Use raw() to preserve ANSI codes when copying
-            let raw_line = line.raw();
+            let raw_line = line.display();
             if i == 0 && i == last_i {
                 let start = get_utf_index(raw_line, sel.start.x);
                 let end = min(get_utf_index(raw_line, sel.end.x), raw_line.len().saturating_sub(1));
