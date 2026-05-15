@@ -1,6 +1,4 @@
 use clap::Parser;
-#[cfg(feature = "dhat-heap")]
-use dhat;
 use crossterm::{
     cursor::MoveTo,
     event::{Event, poll, read},
@@ -10,7 +8,9 @@ use crossterm::{
         enable_raw_mode,
     },
 };
-use kitty_copy_pager::{pager::Pager};
+#[cfg(feature = "dhat-heap")]
+use dhat;
+use kitty_copy_pager::pager::Pager;
 use kitty_copy_pager::settings::*;
 use std::io::{self, Write, stdout};
 use std::time::Duration;
@@ -53,14 +53,11 @@ fn main() -> io::Result<()> {
     loop {
         if poll(Duration::from_millis(INPUT_POLLING_RATE))? {
             let event = read()?;
-            match event {
-                Event::Key(e) => {
-                    let quit = sb.handle_key_event(e)?;
-                    if quit {
-                        break;
-                    }
+            if let Event::Key(e) = event {
+                let quit = sb.handle_key_event(e)?;
+                if quit {
+                    break;
                 }
-                _ => {}
             }
         }
     }

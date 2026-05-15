@@ -96,7 +96,7 @@ impl Pager {
         if self.logical_y.saturating_sub(self.settings.scrolloff) < self.viewport_start {
             let mut movement = self.viewport_start;
             self.viewport_start = self.logical_y.saturating_sub(self.settings.scrolloff);
-            movement = movement - self.viewport_start;
+            movement -= self.viewport_start;
             self.viewport_end = self.viewport_end.saturating_sub(movement);
             return true;
         }

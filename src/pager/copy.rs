@@ -59,14 +59,14 @@ impl Pager {
             } else if i == 0 {
                 let start = get_utf_index(raw_line, sel.start.x);
                 copy_string.push_str(&raw_line[start..]);
-                copy_string.push_str("\n");
+                copy_string.push('\n');
             } else if i == last_i {
                 let end = min(get_utf_index(raw_line, sel.end.x), raw_line.len().saturating_sub(1));
                 copy_string.push_str(&raw_line[..end + 1]);
-                copy_string.push_str("\n");
+                copy_string.push('\n');
             } else {
                 copy_string.push_str(raw_line);
-                copy_string.push_str("\n");
+                copy_string.push('\n');
             }
         }
         let mut out = stdout();

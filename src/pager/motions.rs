@@ -26,7 +26,7 @@ impl Pager {
 
     fn find_w_jump(&self, whitespace_only: bool, already_wrapped: bool) -> Option<usize> {
         let line = self.current_line();
-        let start = get_utf_index(&line, self.cursor_x);
+        let start = get_utf_index(line, self.cursor_x);
         for (i, c) in line[start..].chars().enumerate() {
             let prev = line
                 .chars()
@@ -71,7 +71,7 @@ impl Pager {
         } else {
             self.cursor_x
         };
-        let end = get_utf_index(&line, search_end);
+        let end = get_utf_index(line, search_end);
         for (i, c) in line[..end].chars().rev().enumerate() {
             let target_idx = search_end.saturating_sub(1).saturating_sub(i);
             let prev = if target_idx == 0 {
@@ -114,7 +114,7 @@ impl Pager {
         } else {
             self.cursor_x.saturating_add(1)
         };
-        let start = get_utf_index(&line, search_start);
+        let start = get_utf_index(line, search_start);
         let line_end = &line[start..];
         let last_idx = line_end.chars().count().saturating_sub(1);
 
@@ -165,6 +165,6 @@ impl Pager {
             self.move_to(self.wish_cursor_x, 0)?;
             return Ok(true);
         }
-        return Ok(false);
+        Ok(false)
     }
 }

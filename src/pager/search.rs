@@ -82,11 +82,7 @@ impl Pager {
         let before_lines = if let Some(search) = &self.search
             && !self.settings.real_time_search
         {
-            get_lines(
-                search.query.width(),
-                self.term_width as usize,
-                search.long_search,
-            )
+            get_lines(search.query.width(), self.term_width, search.long_search)
         } else {
             1
         };
@@ -132,11 +128,7 @@ impl Pager {
         let after_lines = if let Some(search) = &self.search
             && !self.settings.real_time_search
         {
-            get_lines(
-                search.query.width(),
-                self.term_width as usize,
-                search.long_search,
-            )
+            get_lines(search.query.width(), self.term_width, search.long_search)
         } else {
             1
         };
@@ -235,9 +227,9 @@ impl Pager {
             if search.error.is_some() || search.results.is_empty() {
                 None
             } else {
-                let at_last_match = search.last_match_pos.map_or(false, |(col, line)| {
-                    col == self.cursor_x && line == self.logical_y
-                });
+                let at_last_match = search
+                    .last_match_pos
+                    .is_some_and(|(col, line)| col == self.cursor_x && line == self.logical_y);
 
                 if at_last_match {
                     let next_index = (search.current_result_index + 1) % search.results.len();
@@ -276,9 +268,9 @@ impl Pager {
             if search.error.is_some() || search.results.is_empty() {
                 None
             } else {
-                let at_last_match = search.last_match_pos.map_or(false, |(col, line)| {
-                    col == self.cursor_x && line == self.logical_y
-                });
+                let at_last_match = search
+                    .last_match_pos
+                    .is_some_and(|(col, line)| col == self.cursor_x && line == self.logical_y);
 
                 if at_last_match {
                     let prev_index = search

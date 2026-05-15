@@ -52,7 +52,7 @@ impl Pager {
         let num_lines = (query_width as f64 / self.term_width.saturating_sub(1) as f64).ceil()
             as usize;
 
-        if is_long && num_lines > self.term_height as usize / 2 {
+        if is_long && num_lines > self.term_height / 2 {
             search.error = Some("Search query too long to display".to_string());
         }
 
