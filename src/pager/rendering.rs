@@ -95,7 +95,7 @@ impl Pager {
         };
 
         out.queue(MoveTo(0, status_line_y))?;
-        out.queue(Print(format!("/ {}", prompt)))?;
+        out.queue(Print(format!("/{}", prompt)))?;
         if is_long && search.state != SearchState::Typing {
             out.queue(Print(PROMPT_ELIPSIS))?;
         }
